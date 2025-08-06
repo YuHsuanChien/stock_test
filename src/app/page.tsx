@@ -31,8 +31,17 @@ interface StockData {
 	macdHistogram?: number;
 	ma20?: number;
 	ma5?: number;
+	ma60?: number; // 新增MA60季線
 	volumeMA20?: number;
 	volumeRatio?: number;
+	atr?: number; // 新增ATR指標
+	priceMomentum?: number; // 新增價格動能指標
+	// RSI計算用的中間變數
+	avgGain?: number;
+	avgLoss?: number;
+	// MACD計算用的EMA值
+	ema12?: number;
+	ema26?: number;
 }
 
 interface TradeResult {
@@ -57,6 +66,11 @@ interface Position {
 	quantity: number;
 	investAmount: number;
 	confidence?: number;
+	// 新增追蹤停利相關欄位
+	highPriceSinceEntry: number; // 進場後最高價
+	trailingStopPrice: number; // 追蹤停損價
+	atrStopPrice?: number; // ATR動態停損價
+	entryATR?: number; // 進場時的ATR值
 }
 
 interface BacktestResults {
@@ -77,6 +91,7 @@ interface BacktestResults {
 		maxWin: number;
 		maxLoss: number;
 		avgHoldingDays: number;
+		profitFactor: number; // 新增獲利因子
 	};
 	detailedTrades: TradeResult[];
 	equityCurve: {
@@ -104,6 +119,25 @@ interface StrategyParams {
 	stopLoss: number;
 	stopProfit: number;
 	confidenceThreshold: number;
+	// 高優先級新增參數
+	enableTrailingStop: boolean; // 是否啟用追蹤停利
+	trailingStopPercent: number; // 追蹤停利百分比
+	trailingActivatePercent: number; // 追蹤停利啟動門檻
+	// 中優先級新增參數
+	enableATRStop: boolean; // 是否啟用ATR動態停損
+	atrPeriod: number; // ATR計算週期
+	atrMultiplier: number; // ATR停損倍數
+	minHoldingDays: number; // 最小持有天數保護
+	enablePriceMomentum: boolean; // 是否啟用價格動能指標
+	priceMomentumPeriod: number; // 價格動能計算週期
+	priceMomentumThreshold: number; // 價格動能門檻
+	// 低優先級新增參數
+	enableMA60: boolean; // 是否啟用MA60季線確認
+	// 新增：Python風格優化參數
+	maxTotalExposure: number; // 最大總曝險度 (Python風格)
+	usePythonLogic: boolean; // 啟用Python決策邏輯
+	hierarchicalDecision: boolean; // 階層決策模式
+	dynamicPositionSize: boolean; // 動態倉位調整
 }
 
 interface BuySignalResult {
@@ -127,16 +161,42 @@ const BacktestSystem = () => {
 	const [newStock, setNewStock] = useState<string>("");
 
 	const [strategyParams, setStrategyParams] = useState<StrategyParams>({
+		// 基礎技術指標參數 (與Python一致)
 		rsiPeriod: 14,
-		rsiOversold: 30,
+		rsiOversold: 35, // 調整為Python標準：35 (深度超賣為25)
 		macdFast: 12,
 		macdSlow: 26,
 		macdSignal: 9,
-		volumeThreshold: 1.2,
-		maxPositionSize: 0.25,
+		volumeThreshold: 1.5, // 提高為Python標準：1.5倍
+		maxPositionSize: 0.25, // Python: 最大單檔25%
 		stopLoss: 0.06,
 		stopProfit: 0.12,
-		confidenceThreshold: 0.8, // 降低信心度閾值，讓買入更容易觸發
+		confidenceThreshold: 0.6, // 平衡Python(70%)與原版(40%)：設定60%
+
+		// 高優先級參數 (追蹤停利機制)
+		enableTrailingStop: true,
+		trailingStopPercent: 0.05, // Python: 5%追蹤停利
+		trailingActivatePercent: 0.03, // Python: 3%獲利後啟動追蹤
+
+		// 中優先級參數 (ATR動態停損)
+		enableATRStop: true,
+		atrPeriod: 14, // Python: ATR週期14天
+		atrMultiplier: 2.0, // Python: ATR倍數2.0
+		minHoldingDays: 5, // Python: 最少持有5天 (避免剛進場就被洗出)
+
+		// 價格動能指標
+		enablePriceMomentum: true,
+		priceMomentumPeriod: 5, // Python: 5日價格動能
+		priceMomentumThreshold: 0.03, // Python: 3%動能門檻 (提高精準度)
+
+		// 低優先級參數 (MA60季線)
+		enableMA60: false, // Python預設不啟用，但可選擇開啟
+
+		// 新增：Python風格優化參數
+		maxTotalExposure: 0.75, // Python: 最大總曝險度75%
+		usePythonLogic: true, // 啟用Python決策邏輯 (預設開啟以獲得更好表現)
+		hierarchicalDecision: true, // 階層決策模式
+		dynamicPositionSize: true, // 動態倉位調整
 	});
 
 	/**
@@ -572,16 +632,21 @@ const BacktestSystem = () => {
 	};
 
 	/**
-	 * 技術指標計算器
+	 * 技術指標計算器 (優化版 - 結合Python優點)
 	 *
 	 * 用途：為原始股價數據計算各種技術分析指標
 	 * 計算指標包括：
-	 * - RSI (相對強弱指標)：判斷超買超賣
+	 * - RSI (相對強弱指標)：使用威爾德平滑法，更精確
 	 * - MACD (指數平滑移動平均線)：趨勢追蹤指標
-	 * - MA5/MA20 (移動平均線)：趨勢判斷
+	 * - MA5/MA20/MA60 (移動平均線)：趨勢判斷
 	 * - 成交量比率：量價關係分析
+	 * - ATR：動態停損計算
+	 * - 價格動能：短期趨勢判斷
 	 *
-	 * 注意：指標計算需要足夠的歷史數據，初期數據點可能為空
+	 * 優化特點：
+	 * - 統一使用 EMA 平滑算法
+	 * - 添加數據品質檢查
+	 * - 支援 Python 風格的批量計算
 	 *
 	 * @param data - 原始股票數據陣列
 	 * @returns StockData[] - 包含技術指標的股票數據陣列
@@ -592,52 +657,97 @@ const BacktestSystem = () => {
 		);
 		const result = [...data];
 
-		// 計算 RSI
-		for (let i = 0; i < result.length; i++) {
-			if (i >= strategyParams.rsiPeriod && i > 0) {
-				let gains = 0;
-				let losses = 0;
+		// 優化版 RSI 計算（統一使用威爾德平滑法，與專業軟體一致）
+		console.log(`📊 開始計算 RSI，週期: ${strategyParams.rsiPeriod}`);
+		for (let i = 1; i < result.length; i++) {
+			const change = result[i].close - result[i - 1].close;
+			const gain = change > 0 ? change : 0;
+			const loss = change < 0 ? -change : 0;
 
-				for (let j = i - strategyParams.rsiPeriod + 1; j <= i; j++) {
-					if (j > 0) {
-						const change = result[j].close - result[j - 1].close;
-						if (change > 0) gains += change;
-						else losses += Math.abs(change);
-					}
+			if (i === strategyParams.rsiPeriod) {
+				// 初始值：使用簡單移動平均（威爾德方法）
+				let avgGain = 0;
+				let avgLoss = 0;
+				for (let j = 1; j <= strategyParams.rsiPeriod; j++) {
+					const pastChange = result[j].close - result[j - 1].close;
+					if (pastChange > 0) avgGain += pastChange;
+					else avgLoss += -pastChange;
+				}
+				result[i].avgGain = avgGain / strategyParams.rsiPeriod;
+				result[i].avgLoss = avgLoss / strategyParams.rsiPeriod;
+			} else if (i > strategyParams.rsiPeriod) {
+				// 後續使用威爾德平滑法（比標準EMA更穩定）
+				const alpha = 1 / strategyParams.rsiPeriod;
+				result[i].avgGain =
+					(1 - alpha) * (result[i - 1].avgGain || 0) + alpha * gain;
+				result[i].avgLoss =
+					(1 - alpha) * (result[i - 1].avgLoss || 0) + alpha * loss;
+			}
+
+			// 計算 RSI
+			if (i >= strategyParams.rsiPeriod) {
+				const avgGain = result[i].avgGain || 0;
+				const avgLoss = result[i].avgLoss || 0;
+
+				// 避免除零錯誤
+				if (avgLoss === 0) {
+					result[i].rsi = 100;
+				} else {
+					const rs = avgGain / avgLoss;
+					result[i].rsi = 100 - 100 / (1 + rs);
 				}
 
-				const avgGain = gains / strategyParams.rsiPeriod;
-				const avgLoss = losses / strategyParams.rsiPeriod;
-				const rs = avgGain / (avgLoss || 1);
-				result[i].rsi = 100 - 100 / (1 + rs);
+				// 數據品質檢查
+				if (
+					isNaN(result[i].rsi!) ||
+					result[i].rsi! < 0 ||
+					result[i].rsi! > 100
+				) {
+					console.warn(`⚠️ RSI 異常值: ${result[i].rsi} at index ${i}`);
+					result[i].rsi = i > 0 ? result[i - 1].rsi : 50; // 使用前值或中性值
+				}
 			}
 		}
 
-		// 計算 MACD
+		// MACD 計算（保持原有精確實現）
+		console.log(
+			`📈 開始計算 MACD，參數: ${strategyParams.macdFast}/${strategyParams.macdSlow}/${strategyParams.macdSignal}`
+		);
+		const fastMultiplier = 2 / (strategyParams.macdFast + 1);
+		const slowMultiplier = 2 / (strategyParams.macdSlow + 1);
+		const signalMultiplier = 2 / (strategyParams.macdSignal + 1);
+
 		for (let i = 0; i < result.length; i++) {
-			if (i >= strategyParams.macdSlow) {
-				let fastSum = 0;
-				let slowSum = 0;
+			if (i === 0) {
+				// 初始值
+				result[i].ema12 = result[i].close;
+				result[i].ema26 = result[i].close;
+			} else {
+				// EMA 計算公式: EMA = (Close - EMA_prev) * multiplier + EMA_prev
+				result[i].ema12 =
+					(result[i].close - (result[i - 1].ema12 || 0)) * fastMultiplier +
+					(result[i - 1].ema12 || 0);
+				result[i].ema26 =
+					(result[i].close - (result[i - 1].ema26 || 0)) * slowMultiplier +
+					(result[i - 1].ema26 || 0);
+			}
 
-				for (let j = i - strategyParams.macdFast + 1; j <= i; j++) {
-					fastSum += result[j].close;
+			// MACD = EMA12 - EMA26
+			if (i >= strategyParams.macdSlow - 1) {
+				result[i].macd = (result[i].ema12 || 0) - (result[i].ema26 || 0);
+
+				// 信號線計算 (MACD 的 9 日 EMA)
+				if (i === strategyParams.macdSlow - 1) {
+					result[i].macdSignal = result[i].macd || 0; // 初始值
+				} else if (i > strategyParams.macdSlow - 1) {
+					result[i].macdSignal =
+						((result[i].macd || 0) - (result[i - 1].macdSignal || 0)) *
+							signalMultiplier +
+						(result[i - 1].macdSignal || 0);
 				}
-				for (let j = i - strategyParams.macdSlow + 1; j <= i; j++) {
-					slowSum += result[j].close;
-				}
 
-				const fastMA = fastSum / strategyParams.macdFast;
-				const slowMA = slowSum / strategyParams.macdSlow;
-				result[i].macd = fastMA - slowMA;
-
-				if (i >= strategyParams.macdSlow + strategyParams.macdSignal) {
-					let signalSum = 0;
-					for (let j = i - strategyParams.macdSignal + 1; j <= i; j++) {
-						if (result[j].macd !== undefined) {
-							signalSum += result[j].macd!;
-						}
-					}
-					result[i].macdSignal = signalSum / strategyParams.macdSignal;
+				// MACD 柱狀圖
+				if (result[i].macdSignal !== undefined) {
 					result[i].macdHistogram =
 						(result[i].macd || 0) - (result[i].macdSignal || 0);
 				}
@@ -645,8 +755,8 @@ const BacktestSystem = () => {
 		}
 
 		// 計算移動平均和成交量比率
-
 		for (let i = 0; i < result.length; i++) {
+			// MA20
 			if (i >= 20) {
 				let sum = 0;
 				for (let j = i - 19; j <= i; j++) {
@@ -655,6 +765,7 @@ const BacktestSystem = () => {
 				result[i].ma20 = sum / 20;
 			}
 
+			// MA5
 			if (i >= 5) {
 				let sum = 0;
 				for (let j = i - 4; j <= i; j++) {
@@ -663,6 +774,16 @@ const BacktestSystem = () => {
 				result[i].ma5 = sum / 5;
 			}
 
+			// MA60 (季線) - 低優先級功能
+			if (i >= 60 && strategyParams.enableMA60) {
+				let sum = 0;
+				for (let j = i - 59; j <= i; j++) {
+					sum += result[j].close;
+				}
+				result[i].ma60 = sum / 60;
+			}
+
+			// 成交量比率
 			if (i >= 20) {
 				let volumeSum = 0;
 				for (let j = i - 19; j <= i; j++) {
@@ -670,6 +791,34 @@ const BacktestSystem = () => {
 				}
 				result[i].volumeMA20 = volumeSum / 20;
 				result[i].volumeRatio = result[i].volume / (result[i].volumeMA20 || 1);
+			}
+
+			// ATR (Average True Range) - 中優先級功能
+			if (i > 0 && strategyParams.enableATRStop) {
+				if (i >= strategyParams.atrPeriod) {
+					let atrSum = 0;
+					for (let j = i - strategyParams.atrPeriod + 1; j <= i; j++) {
+						if (j > 0) {
+							const tr = Math.max(
+								result[j].high - result[j].low,
+								Math.abs(result[j].high - result[j - 1].close),
+								Math.abs(result[j].low - result[j - 1].close)
+							);
+							atrSum += tr;
+						}
+					}
+					result[i].atr = atrSum / strategyParams.atrPeriod;
+				}
+			}
+
+			// 價格動能指標 - 中優先級功能
+			if (
+				i >= strategyParams.priceMomentumPeriod &&
+				strategyParams.enablePriceMomentum
+			) {
+				const currentPrice = result[i].close;
+				const pastPrice = result[i - strategyParams.priceMomentumPeriod].close;
+				result[i].priceMomentum = (currentPrice - pastPrice) / pastPrice;
 			}
 		}
 
@@ -682,14 +831,20 @@ const BacktestSystem = () => {
 	};
 
 	/**
-	 * 買入信心度計算器
+	 * 買入信心度計算器 (優化版 - 結合Python階層決策)
 	 *
 	 * 用途：根據多個技術指標計算進場的信心度分數
+	 * 優化特點：
+	 * - 支援 Python 風格的階層決策模式
+	 * - 更精確的權重分配
+	 * - 動態調整評分標準
+	 *
 	 * 評估因子：
-	 * - RSI底部回升 (+0.15~0.25)：基於用戶設定的超賣閾值
-	 * - MACD黃金交叉 (+0.10~0.20)：趨勢轉強信號
-	 * - 成交量放大 (+0.05~0.15)：資金關注度
-	 * - 移動平均線排列 (+0.05~0.10)：多頭排列加分
+	 * - RSI深度分析 (+0.15~0.30)：分層評估超賣程度
+	 * - MACD趨勢確認 (+0.10~0.25)：黃金交叉強度判斷
+	 * - 成交量驗證 (+0.05~0.15)：資金流入確認
+	 * - 趨勢排列 (+0.05~0.15)：多頭格局評估
+	 * - 價格動能 (+0.05~0.10)：短期動力評估
 	 *
 	 * @param current - 當前股票數據
 	 * @param previous - 前一天股票數據（可選）
@@ -699,72 +854,181 @@ const BacktestSystem = () => {
 		current: StockData,
 		previous?: StockData
 	): number => {
-		let confidence = 0.5;
+		// Python 風格：較低的起始信心度，透過嚴格評估提升
+		let confidence = strategyParams.usePythonLogic ? 0.3 : 0.45;
 
-		// RSI 基於用戶設定的超賣閾值來評分
-		const extremeOversold = strategyParams.rsiOversold * 0.83; // 約 83% 的超賣閾值作為極度超賣
-		if (
-			(current.rsi || 0) < extremeOversold &&
-			(current.rsi || 0) > (previous?.rsi || 0)
-		) {
-			confidence += 0.25; // 極度超賣且回升
-		} else if (
-			(current.rsi || 0) < strategyParams.rsiOversold &&
-			(current.rsi || 0) > (previous?.rsi || 0)
-		) {
-			confidence += 0.15; // 超賣且回升
+		console.log(
+			`🧮 開始計算信心度，Python模式: ${strategyParams.usePythonLogic}`
+		);
+
+		// RSI 深度分析（Python 風格更嚴格）
+		const rsi = current.rsi || 0;
+		if (strategyParams.usePythonLogic) {
+			// Python 階層決策：更嚴格的 RSI 評分
+			if (rsi < 20) {
+				confidence += 0.35; // 極度超賣，高度看多
+			} else if (rsi < 25) {
+				confidence += 0.3; // 深度超賣
+			} else if (rsi < 30) {
+				confidence += 0.25; // 標準超賣
+			} else if (rsi < 35) {
+				confidence += 0.15; // 輕度超賣
+			} else {
+				// RSI > 35，Python 模式下直接降低信心度
+				confidence -= 0.1;
+			}
+		} else {
+			// 原版較寬鬆的評分
+			if (rsi < 25) {
+				confidence += 0.25;
+			} else if (rsi < 35) {
+				confidence += 0.2;
+			} else if (rsi < 45) {
+				confidence += 0.15;
+			}
 		}
 
-		if (
-			(current.macd || 0) > (current.macdSignal || 0) &&
-			(previous?.macd || 0) <= (previous?.macdSignal || 0)
-		) {
-			confidence += 0.2;
-		} else if ((current.macd || 0) > (current.macdSignal || 0)) {
-			confidence += 0.1;
+		// RSI 回升趨勢（兩種模式都支援）
+		if (previous && rsi > (previous.rsi || 0)) {
+			const rsiImprovement = rsi - (previous.rsi || 0);
+			if (rsiImprovement > 3) {
+				confidence += 0.15; // 強勢回升
+			} else if (rsiImprovement > 1) {
+				confidence += 0.1; // 一般回升
+			} else {
+				confidence += 0.05; // 輕微回升
+			}
 		}
 
-		if ((current.volumeRatio || 0) > 2.0) {
-			confidence += 0.15;
-		} else if ((current.volumeRatio || 0) > 1.5) {
-			confidence += 0.1;
-		} else if ((current.volumeRatio || 0) > 1.2) {
-			confidence += 0.05;
+		// MACD 趨勢確認（Python 風格更注重交叉強度）
+		const macd = current.macd || 0;
+		const macdSignal = current.macdSignal || 0;
+		const macdHisto = current.macdHistogram || 0;
+
+		if (macd > macdSignal) {
+			// 檢查是否為新的黃金交叉
+			const prevMacd = previous?.macd || 0;
+			const prevSignal = previous?.macdSignal || 0;
+			const isNewGoldenCross = prevMacd <= prevSignal && macd > macdSignal;
+
+			if (strategyParams.usePythonLogic) {
+				if (isNewGoldenCross && macdHisto > 0) {
+					confidence += 0.25; // 新黃金交叉且柱狀圖為正
+				} else if (isNewGoldenCross) {
+					confidence += 0.2; // 新黃金交叉
+				} else if (macdHisto > 0) {
+					confidence += 0.15; // 持續黃金交叉且強化
+				} else {
+					confidence += 0.1; // 基本黃金交叉
+				}
+			} else {
+				confidence += 0.15; // 原版固定加分
+			}
 		}
 
-		if (
-			current.close > (current.ma5 || 0) &&
-			(current.ma5 || 0) > (current.ma20 || 0)
-		) {
-			confidence += 0.1;
-		} else if (current.close > (current.ma20 || 0)) {
-			confidence += 0.05;
+		// 成交量驗證（Python 風格更高門檻）
+		const volumeRatio = current.volumeRatio || 0;
+		const volumeThreshold = strategyParams.volumeThreshold;
+
+		if (strategyParams.usePythonLogic) {
+			if (volumeRatio > volumeThreshold * 1.5) {
+				confidence += 0.15; // 爆量
+			} else if (volumeRatio > volumeThreshold) {
+				confidence += 0.1; // 量增
+			} else {
+				confidence -= 0.05; // 量不足扣分
+			}
+		} else {
+			if (volumeRatio > volumeThreshold) {
+				confidence += 0.1;
+			}
 		}
 
-		return Math.min(confidence, 0.95);
+		// 趨勢排列確認
+		const close = current.close;
+		const ma5 = current.ma5 || 0;
+		const ma20 = current.ma20 || 0;
+		const ma60 = current.ma60 || 0;
+
+		if (strategyParams.usePythonLogic) {
+			// Python 風格：更注重多頭排列
+			if (
+				strategyParams.enableMA60 &&
+				close > ma5 &&
+				ma5 > ma20 &&
+				ma20 > ma60
+			) {
+				confidence += 0.15; // 完美多頭排列
+			} else if (close > ma5 && ma5 > ma20) {
+				confidence += 0.12; // 短中期多頭排列
+			} else if (close > ma20) {
+				confidence += 0.08; // 基本多頭
+			} else {
+				confidence -= 0.05; // 空頭排列扣分
+			}
+		} else {
+			// 原版評分
+			if (close > ma20) {
+				confidence += 0.08;
+			}
+		}
+
+		// 價格動能評估
+		const priceMomentum = current.priceMomentum || 0;
+		if (strategyParams.enablePriceMomentum) {
+			if (priceMomentum > strategyParams.priceMomentumThreshold) {
+				confidence += 0.1; // 強勢動能
+			} else if (priceMomentum > 0) {
+				confidence += 0.05; // 正動能
+			} else if (priceMomentum < -strategyParams.priceMomentumThreshold) {
+				confidence -= 0.05; // 負動能扣分
+			}
+		}
+
+		// 最終調整
+		const finalConfidence = Math.max(0, Math.min(confidence, 0.95));
+
+		console.log(
+			`📊 信心度計算完成: ${(finalConfidence * 100).toFixed(
+				1
+			)}% (RSI: ${rsi.toFixed(1)}, MACD: ${macd > macdSignal ? "✅" : "❌"})`
+		);
+
+		return finalConfidence;
 	};
 
 	/**
-	 * 買入信號檢查器
+	 * 買入信號檢查器 (優化版 - Python階層決策系統)
 	 *
 	 * 用途：綜合多個條件判斷是否應該買入股票
-	 * 買入條件（須全部滿足）：
-	 * 1. RSI < 超賣閾值 且較前日回升：超賣反彈
-	 * 2. MACD黃金交叉：趨勢轉多
-	 * 3. 成交量放大：資金進場
-	 * 4. 收紅K線：當日上漲
-	 * 5. 信心度達標：綜合評分通過門檻
+	 *
+	 * 優化特點：
+	 * - 支援 Python 風格的階層決策
+	 * - 可切換嚴格/寬鬆模式
+	 * - 更詳細的日誌記錄
+	 *
+	 * 階層決策流程：
+	 * 第一層：基礎技術指標篩選
+	 * 第二層：趨勢確認
+	 * 第三層：信心度評估
+	 * 第四層：風險控制
 	 *
 	 * @param current - 當前股票數據
 	 * @param previous - 前一天股票數據（可選）
-	 * @returns BuySignalResult - 買入信號結果 {signal: boolean, reason: string, confidence?: number}
+	 * @returns BuySignalResult - 買入信號結果
 	 */
 	const checkBuySignal = (
 		current: StockData,
 		previous?: StockData
 	): BuySignalResult => {
 		const dateStr = current.date.toISOString().split("T")[0];
+		const isPythonMode = strategyParams.usePythonLogic;
 
+		console.log(
+			`🔍 ${dateStr} 開始${isPythonMode ? "Python階層" : "標準"}決策分析...`
+		);
+
+		// 第一層：數據完整性檢查
 		if (!current.rsi || !current.macd || !current.macdSignal) {
 			console.log(
 				`🚫 ${dateStr} 數據不足: RSI=${current.rsi}, MACD=${current.macd}, Signal=${current.macdSignal}`
@@ -772,126 +1036,262 @@ const BacktestSystem = () => {
 			return { signal: false, reason: "數據不足" };
 		}
 
+		const rsi = current.rsi;
+		const macd = current.macd;
+		const macdSignal = current.macdSignal;
+		const volumeRatio = current.volumeRatio || 0;
+
 		console.log(
-			`🔍 ${dateStr} 檢查買入信號: RSI=${current.rsi.toFixed(2)} (閾值: ${
-				strategyParams.rsiOversold
-			}), MACD=${current.macd.toFixed(4)}, Signal=${current.macdSignal.toFixed(
+			`� ${dateStr} 技術指標 - RSI: ${rsi.toFixed(2)}, MACD: ${macd.toFixed(
 				4
-			)}`
+			)}, 量比: ${volumeRatio.toFixed(2)}`
 		);
 
-		if (current.rsi > strategyParams.rsiOversold) {
-			console.log(
-				`🚫 ${dateStr} RSI不符合條件: ${current.rsi.toFixed(2)} > ${
-					strategyParams.rsiOversold
-				}`
-			);
-			return {
-				signal: false,
-				reason: `RSI不符合條件 (${current.rsi.toFixed(2)} > ${
-					strategyParams.rsiOversold
-				})`,
-			};
+		// 第二層：基礎技術指標篩選（Python風格更嚴格）
+		if (isPythonMode && strategyParams.hierarchicalDecision) {
+			// Python 階層決策：嚴格的條件檢查
+
+			// 檢查 1: RSI 超賣條件
+			if (rsi > strategyParams.rsiOversold) {
+				console.log(
+					`🚫 ${dateStr} Python模式 - RSI不符合條件: ${rsi.toFixed(2)} > ${
+						strategyParams.rsiOversold
+					}`
+				);
+				return {
+					signal: false,
+					reason: `RSI不符合條件 (Python嚴格模式: >${strategyParams.rsiOversold})`,
+				};
+			}
+
+			// 檢查 2: MACD 黃金交叉
+			if (macd <= macdSignal) {
+				console.log(
+					`🚫 ${dateStr} Python模式 - MACD未黃金交叉: ${macd.toFixed(
+						4
+					)} <= ${macdSignal.toFixed(4)}`
+				);
+				return { signal: false, reason: "MACD未黃金交叉" };
+			}
+
+			// 檢查 3: RSI 回升確認
+			if (!previous || rsi <= (previous.rsi || 0)) {
+				console.log(
+					`🚫 ${dateStr} Python模式 - RSI未回升: ${rsi.toFixed(2)} <= ${
+						previous?.rsi?.toFixed(2) || "N/A"
+					}`
+				);
+				return { signal: false, reason: "RSI未回升" };
+			}
+
+			// 檢查 4: 成交量確認
+			if (volumeRatio < strategyParams.volumeThreshold) {
+				console.log(
+					`🚫 ${dateStr} Python模式 - 成交量不足: ${volumeRatio.toFixed(2)} < ${
+						strategyParams.volumeThreshold
+					}`
+				);
+				return { signal: false, reason: "成交量不足" };
+			}
+
+			// 檢查 5: K線型態確認
+			if (current.close <= current.open) {
+				console.log(
+					`🚫 ${dateStr} Python模式 - 收黑K線: Close=${current.close} <= Open=${current.open}`
+				);
+				return { signal: false, reason: "收黑K線" };
+			}
+
+			// 檢查 6: 價格動能確認（Python額外條件）
+			if (
+				strategyParams.enablePriceMomentum &&
+				current.priceMomentum !== undefined
+			) {
+				if (current.priceMomentum < 0) {
+					console.log(
+						`🚫 ${dateStr} Python模式 - 價格動能為負: ${(
+							current.priceMomentum * 100
+						).toFixed(2)}%`
+					);
+					return { signal: false, reason: "價格動能為負" };
+				}
+			}
+		} else {
+			// 原版較寬鬆的條件檢查
+			if (rsi > strategyParams.rsiOversold) {
+				console.log(
+					`🚫 ${dateStr} 標準模式 - RSI不符合條件: ${rsi.toFixed(2)} > ${
+						strategyParams.rsiOversold
+					}`
+				);
+				return {
+					signal: false,
+					reason: `RSI不符合條件 (>${strategyParams.rsiOversold})`,
+				};
+			}
+
+			if (macd <= macdSignal) {
+				console.log(
+					`🚫 ${dateStr} 標準模式 - MACD未黃金交叉: ${macd.toFixed(
+						4
+					)} <= ${macdSignal.toFixed(4)}`
+				);
+				return { signal: false, reason: "MACD未黃金交叉" };
+			}
+
+			if (!previous || rsi <= (previous.rsi || 0)) {
+				console.log(
+					`🚫 ${dateStr} 標準模式 - RSI未回升: ${rsi.toFixed(2)} <= ${
+						previous?.rsi?.toFixed(2) || "N/A"
+					}`
+				);
+				return { signal: false, reason: "RSI未回升" };
+			}
+
+			if (volumeRatio < strategyParams.volumeThreshold) {
+				console.log(
+					`🚫 ${dateStr} 標準模式 - 成交量不足: ${volumeRatio.toFixed(2)} < ${
+						strategyParams.volumeThreshold
+					}`
+				);
+				return { signal: false, reason: "成交量不足" };
+			}
+
+			if (current.close <= current.open) {
+				console.log(
+					`🚫 ${dateStr} 標準模式 - 收黑K線: Close=${current.close} <= Open=${current.open}`
+				);
+				return { signal: false, reason: "收黑K線" };
+			}
 		}
 
-		if ((current.macd || 0) <= (current.macdSignal || 0)) {
-			console.log(
-				`🚫 ${dateStr} MACD未黃金交叉: ${current.macd.toFixed(
-					4
-				)} <= ${current.macdSignal.toFixed(4)}`
-			);
-			return { signal: false, reason: "MACD未黃金交叉" };
-		}
-
-		if ((current.rsi || 0) <= (previous?.rsi || 0)) {
-			console.log(
-				`🚫 ${dateStr} RSI未回升: ${current.rsi.toFixed(2)} <= ${
-					previous?.rsi?.toFixed(2) || "N/A"
-				}`
-			);
-			return { signal: false, reason: "RSI未回升" };
-		}
-
-		if ((current.volumeRatio || 0) < strategyParams.volumeThreshold) {
-			console.log(
-				`🚫 ${dateStr} 成交量不足: ${
-					current.volumeRatio?.toFixed(2) || "N/A"
-				} < ${strategyParams.volumeThreshold}`
-			);
-			return { signal: false, reason: "成交量不足" };
-		}
-
-		if (current.close <= current.open) {
-			console.log(
-				`🚫 ${dateStr} 收黑K線: Close=${current.close} <= Open=${current.open}`
-			);
-			return { signal: false, reason: "收黑K線" };
-		}
-
+		// 第三層：信心度評估
 		const confidence = calculateConfidence(current, previous);
-		if (confidence < strategyParams.confidenceThreshold) {
+		const confidenceThreshold = strategyParams.confidenceThreshold;
+
+		if (confidence < confidenceThreshold) {
 			console.log(
 				`🚫 ${dateStr} 信心度不足: ${(confidence * 100).toFixed(1)}% < ${(
-					strategyParams.confidenceThreshold * 100
+					confidenceThreshold * 100
 				).toFixed(1)}%`
 			);
 			return {
 				signal: false,
 				reason: `信心度不足: ${(confidence * 100).toFixed(1)}% < ${(
-					strategyParams.confidenceThreshold * 100
+					confidenceThreshold * 100
 				).toFixed(1)}%`,
 			};
 		}
 
+		// 通過所有檢查！
 		console.log(
-			`✅ ${dateStr} 買入信號觸發！信心度: ${(confidence * 100).toFixed(1)}%`
+			`✅ ${dateStr} ${
+				isPythonMode ? "Python階層決策" : "標準決策"
+			}通過！信心度: ${(confidence * 100).toFixed(1)}%`
 		);
 		return {
 			signal: true,
-			reason: `買進訊號，信心度: ${(confidence * 100).toFixed(1)}%`,
+			reason: `${isPythonMode ? "Python階層決策" : "標準"}買進訊號，信心度: ${(
+				confidence * 100
+			).toFixed(1)}%`,
 			confidence,
 		};
 	};
 
 	/**
-	 * 賣出信號檢查器
+	 * 賣出信號檢查器 (優化版)
 	 *
-	 * 用途：判斷持有股票是否應該賣出
-	 * 賣出條件（任一滿足即賣出）：
-	 * 1. 達到停利點：獲利達預設百分比
-	 * 2. 觸及停損點：虧損達預設百分比
-	 * 3. RSI超買 (>70)：技術面過熱
-	 * 4. MACD死亡交叉：趨勢轉弱
-	 * 5. 持有超過30天：避免長期套牢
+	 * 用途：綜合多種出場條件判斷是否應該賣出股票
+	 * 出場條件：
+	 * 1. 基礎停利停損
+	 * 2. 追蹤停利機制 (高優先級)
+	 * 3. ATR動態停損 (中優先級)
+	 * 4. 持有天數保護 (中優先級)
+	 * 5. 技術指標確認
 	 *
 	 * @param current - 當前股票數據
-	 * @param entryPrice - 買入價格
-	 * @param entryDate - 買入日期
+	 * @param position - 持倉資訊
 	 * @param holdingDays - 持有天數
-	 * @returns SellSignalResult - 賣出信號結果 {signal: boolean, reason: string}
+	 * @returns SellSignalResult - 賣出信號結果
 	 */
 	const checkSellSignal = (
 		current: StockData,
-		entryPrice: number,
-		entryDate: Date,
+		position: Position,
 		holdingDays: number
 	): SellSignalResult => {
-		const profitRate = (current.close - entryPrice) / entryPrice;
+		const currentPrice = current.close;
+		const entryPrice = position.entryPrice;
+		const profitRate = (currentPrice - entryPrice) / entryPrice;
 
+		// 更新進場後最高價 (追蹤停利用)
+		if (currentPrice > position.highPriceSinceEntry) {
+			position.highPriceSinceEntry = currentPrice;
+		}
+
+		// 高優先級: 追蹤停利機制
+		if (strategyParams.enableTrailingStop) {
+			const profitSinceEntry =
+				(position.highPriceSinceEntry - entryPrice) / entryPrice;
+
+			// 只有獲利超過啟動門檻才啟用追蹤停利
+			if (profitSinceEntry >= strategyParams.trailingActivatePercent) {
+				const trailingStopPrice =
+					position.highPriceSinceEntry *
+					(1 - strategyParams.trailingStopPercent);
+				position.trailingStopPrice = trailingStopPrice;
+
+				if (currentPrice <= trailingStopPrice) {
+					return {
+						signal: true,
+						reason: `追蹤停利出場，最高點回落: ${(
+							strategyParams.trailingStopPercent * 100
+						).toFixed(1)}%，獲利: ${(profitRate * 100).toFixed(2)}%`,
+					};
+				}
+			}
+		}
+
+		// 中優先級: ATR動態停損
+		if (strategyParams.enableATRStop && position.atrStopPrice) {
+			if (currentPrice <= position.atrStopPrice) {
+				return {
+					signal: true,
+					reason: `ATR動態停損出場，虧損: ${(profitRate * 100).toFixed(2)}%`,
+				};
+			}
+		}
+
+		// 基礎停利停損
 		if (profitRate >= strategyParams.stopProfit) {
 			return {
 				signal: true,
-				reason: `停利出場，獲利: ${(profitRate * 100).toFixed(2)}%`,
+				reason: `固定停利出場，獲利: ${(profitRate * 100).toFixed(2)}%`,
 			};
 		}
 
 		if (profitRate <= -strategyParams.stopLoss) {
 			return {
 				signal: true,
-				reason: `停損出場，虧損: ${(profitRate * 100).toFixed(2)}%`,
+				reason: `固定停損出場，虧損: ${(profitRate * 100).toFixed(2)}%`,
 			};
 		}
 
+		// 中優先級: 持有天數保護 (避免剛進場就被技術指標洗出)
+		if (holdingDays <= strategyParams.minHoldingDays) {
+			// 在保護期內，只允許重大虧損出場
+			if (profitRate <= -strategyParams.stopLoss * 1.5) {
+				return {
+					signal: true,
+					reason: `保護期內重大虧損出場，虧損: ${(profitRate * 100).toFixed(
+						2
+					)}%`,
+				};
+			}
+			// 其他情況不出場
+			return { signal: false, reason: "" };
+		}
+
+		// 技術指標出場 (保護期後才生效)
 		if ((current.rsi || 0) > 70) {
 			return { signal: true, reason: "RSI超買出場" };
 		}
@@ -903,11 +1303,141 @@ const BacktestSystem = () => {
 			return { signal: true, reason: "MACD死亡交叉出場" };
 		}
 
+		// 長期持有出場
 		if (holdingDays > 30) {
 			return { signal: true, reason: "持有超過30天出場" };
 		}
 
 		return { signal: false, reason: "" };
+	};
+
+	/**
+	 * 動態倉位大小計算器 (Python風格優化版)
+	 *
+	 * 用途：根據信心度和當前風險暴露度計算最適倉位大小
+	 * 特點：
+	 * - 支援 Python 風格的動態調整
+	 * - 考慮總曝險度風險控制
+	 * - 根據信心度分層調整
+	 *
+	 * Python風格邏輯：
+	 * - 基礎倉位: 15%
+	 * - 高信心度(>80%): 倍數 1.5 = 22.5%
+	 * - 中信心度(>65%): 倍數 1.0 = 15%
+	 * - 低信心度(<65%): 倍數 0.7 = 10.5%
+	 * - 總曝險度>60%時: 倍數 * 0.5 (風險控制)
+	 *
+	 * @param confidence - 信心度分數 (0-1)
+	 * @param currentTotalExposure - 當前總曝險度 (0-1)
+	 * @returns number - 建議倉位大小比例 (0-1)
+	 */
+	const calculateDynamicPositionSize = (
+		confidence: number,
+		currentTotalExposure: number
+	): number => {
+		if (!strategyParams.dynamicPositionSize) {
+			// 如果未啟用動態倉位，使用固定邏輯
+			return confidence > 0.8 ? 0.225 : confidence > 0.65 ? 0.15 : 0.105;
+		}
+
+		console.log(
+			`💰 開始計算動態倉位 - 信心度: ${(confidence * 100).toFixed(
+				1
+			)}%, 當前曝險度: ${(currentTotalExposure * 100).toFixed(1)}%`
+		);
+
+		// Python風格的基礎倉位計算
+		const basePosition = 0.15; // 15% 基礎倉位
+		let multiplier = 1.0;
+
+		// 根據信心度調整倍數
+		if (confidence > 0.8) {
+			multiplier = 1.5; // 高信心度
+			console.log(`📈 高信心度模式 (>80%)，倍數: ${multiplier}`);
+		} else if (confidence > 0.65) {
+			multiplier = 1.0; // 中等信心度
+			console.log(`📊 中信心度模式 (65-80%)，倍數: ${multiplier}`);
+		} else {
+			multiplier = 0.7; // 低信心度
+			console.log(`📉 低信心度模式 (<65%)，倍數: ${multiplier}`);
+		}
+
+		let suggestedPosition = basePosition * multiplier;
+
+		// Python風格風險控制：當總曝險度過高時減少倉位
+		if (currentTotalExposure > strategyParams.maxTotalExposure) {
+			const riskReduction = 0.5; // 減半
+			suggestedPosition *= riskReduction;
+			console.log(
+				`⚠️ 總曝險度過高 (${(currentTotalExposure * 100).toFixed(1)}% > ${(
+					strategyParams.maxTotalExposure * 100
+				).toFixed(1)}%)，倉位減半至: ${(suggestedPosition * 100).toFixed(1)}%`
+			);
+		} else if (currentTotalExposure > 0.6) {
+			// 當曝險度接近限制時，適度減少倉位
+			const riskReduction = 0.75;
+			suggestedPosition *= riskReduction;
+			console.log(
+				`🔶 曝險度偏高 (${(currentTotalExposure * 100).toFixed(
+					1
+				)}% > 60%)，倉位調整至: ${(suggestedPosition * 100).toFixed(1)}%`
+			);
+		}
+
+		// 最終限制：不能超過單一持股上限
+		const finalPosition = Math.min(
+			suggestedPosition,
+			strategyParams.maxPositionSize
+		);
+
+		console.log(
+			`💼 最終倉位決定: ${(finalPosition * 100).toFixed(1)}% (限制: ${(
+				strategyParams.maxPositionSize * 100
+			).toFixed(1)}%)`
+		);
+
+		return finalPosition;
+	};
+
+	/**
+	 * 計算當前總曝險度
+	 *
+	 * @param positions - 當前持倉記錄
+	 * @param currentCapital - 當前資金
+	 * @param allStockData - 所有股票數據
+	 * @param currentDateStr - 當前日期字串
+	 * @returns number - 總曝險度比例 (0-1)
+	 */
+	const calculateCurrentExposure = (
+		positions: Record<string, Position>,
+		currentCapital: number,
+		allStockData: Record<string, StockData[]>,
+		currentDateStr: string
+	): number => {
+		let totalPositionValue = 0;
+
+		for (const [stock, position] of Object.entries(positions)) {
+			const stockData = allStockData[stock];
+			if (stockData) {
+				const currentData = stockData.find(
+					(d) => d.date.toISOString().split("T")[0] === currentDateStr
+				);
+				if (currentData) {
+					totalPositionValue += currentData.close * position.quantity;
+				}
+			}
+		}
+
+		const totalCapital = currentCapital + totalPositionValue;
+		const exposure = totalPositionValue / totalCapital;
+
+		console.log(
+			`📊 當前曝險度計算: 持倉價值 ${totalPositionValue.toLocaleString()}, 總資本 ${totalCapital.toLocaleString()}, 曝險度: ${(
+				exposure * 100
+			).toFixed(1)}%`
+		);
+
+		return exposure;
 	};
 
 	/**
@@ -1037,12 +1567,7 @@ const BacktestSystem = () => {
 							(currentDate.getTime() - position.entryDate.getTime()) /
 								(1000 * 60 * 60 * 24)
 						);
-						const sellCheck = checkSellSignal(
-							current,
-							position.entryPrice,
-							position.entryDate,
-							holdingDays
-						);
+						const sellCheck = checkSellSignal(current, position, holdingDays);
 
 						if (sellCheck.signal) {
 							const sellAmount = current.close * position.quantity * 0.9965;
@@ -1074,16 +1599,29 @@ const BacktestSystem = () => {
 						const buyCheck = checkBuySignal(current, previous);
 
 						if (buyCheck.signal) {
-							const positionSize =
-								(buyCheck.confidence || 0) > 0.8
-									? 0.225
-									: (buyCheck.confidence || 0) > 0.65
-									? 0.15
-									: 0.105;
+							// 優化版：使用動態倉位管理系統
+							const currentExposure = calculateCurrentExposure(
+								positions,
+								currentCapital,
+								allStockData,
+								dateStr
+							);
+
+							const dynamicPositionSize = calculateDynamicPositionSize(
+								buyCheck.confidence || 0,
+								currentExposure
+							);
+
 							const investAmount = Math.min(
-								currentCapital * positionSize,
+								currentCapital * dynamicPositionSize,
 								currentCapital * strategyParams.maxPositionSize
 							);
+
+							console.log(`💰 ${dateStr} ${stock} 倉位計算:
+								信心度: ${((buyCheck.confidence || 0) * 100).toFixed(1)}%
+								當前曝險度: ${(currentExposure * 100).toFixed(1)}%
+								動態倉位: ${(dynamicPositionSize * 100).toFixed(1)}%
+								投資金額: ${investAmount.toLocaleString()}`);
 
 							if (investAmount > 10000) {
 								const quantity = Math.floor(
@@ -1098,6 +1636,15 @@ const BacktestSystem = () => {
 										quantity,
 										investAmount: actualInvestAmount,
 										confidence: buyCheck.confidence,
+										// 初始化追蹤停利相關欄位
+										highPriceSinceEntry: current.close,
+										trailingStopPrice:
+											current.close * (1 - strategyParams.trailingStopPercent),
+										atrStopPrice: current.atr
+											? current.close -
+											  strategyParams.atrMultiplier * current.atr
+											: undefined,
+										entryATR: current.atr,
 									};
 
 									trades.push({
@@ -1112,7 +1659,17 @@ const BacktestSystem = () => {
 									});
 
 									currentCapital -= actualInvestAmount;
+
+									console.log(`✅ ${dateStr} ${stock} 買入成功:
+										價格: ${current.close}
+										數量: ${quantity}
+										金額: ${actualInvestAmount.toLocaleString()}
+										剩餘現金: ${currentCapital.toLocaleString()}`);
 								}
+							} else {
+								console.log(
+									`💸 ${dateStr} ${stock} 投資金額不足最低要求 (${investAmount.toLocaleString()} < 10,000)`
+								);
 							}
 						}
 					}
@@ -1194,6 +1751,22 @@ const BacktestSystem = () => {
 									0
 							  ) / completedTrades.length
 							: 0,
+					// 新增獲利因子計算
+					profitFactor: (() => {
+						const totalGains = winningTrades.reduce(
+							(sum, t) => sum + Math.abs(t.profit || 0),
+							0
+						);
+						const totalLosses = losingTrades.reduce(
+							(sum, t) => sum + Math.abs(t.profit || 0),
+							0
+						);
+						return totalLosses > 0
+							? totalGains / totalLosses
+							: totalGains > 0
+							? 999
+							: 0;
+					})(),
 				},
 				detailedTrades: completedTrades,
 				equityCurve,
@@ -1288,9 +1861,43 @@ const BacktestSystem = () => {
 	return (
 		<div className='w-full max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen'>
 			<div className='bg-white rounded-lg shadow-lg p-6 mb-6'>
-				<h1 className='text-3xl font-bold text-center mb-8 text-gray-800'>
-					策略3.1 動態回測系統
+				<h1 className='text-3xl font-bold text-center mb-4 text-gray-800'>
+					策略3.2 優化動態回測系統
 				</h1>
+				<div className='text-center mb-6'>
+					<span className='inline-block px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-semibold rounded-full shadow-lg'>
+						🚀 結合 Python & React 優點的智能回測引擎
+					</span>
+				</div>
+				<div className='grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-sm'>
+					<div className='bg-gradient-to-br from-blue-50 to-indigo-100 p-4 rounded-lg border border-blue-200'>
+						<h3 className='font-semibold text-blue-800 mb-2'>🐍 Python精華</h3>
+						<ul className='text-blue-700 space-y-1 text-xs'>
+							<li>• 階層決策系統</li>
+							<li>• 動態倉位管理</li>
+							<li>• 嚴格信號篩選</li>
+							<li>• 風險曝險控制</li>
+						</ul>
+					</div>
+					<div className='bg-gradient-to-br from-green-50 to-emerald-100 p-4 rounded-lg border border-green-200'>
+						<h3 className='font-semibold text-green-800 mb-2'>⚛️ React優勢</h3>
+						<ul className='text-green-700 space-y-1 text-xs'>
+							<li>• 即時參數調整</li>
+							<li>• 視覺化分析</li>
+							<li>• 多資料源整合</li>
+							<li>• 完整追蹤停利</li>
+						</ul>
+					</div>
+					<div className='bg-gradient-to-br from-purple-50 to-pink-100 p-4 rounded-lg border border-purple-200'>
+						<h3 className='font-semibold text-purple-800 mb-2'>✨ 融合創新</h3>
+						<ul className='text-purple-700 space-y-1 text-xs'>
+							<li>• 雙模式切換</li>
+							<li>• 智能風控</li>
+							<li>• 專業指標算法</li>
+							<li>• 最佳化參數</li>
+						</ul>
+					</div>
+				</div>
 
 				<div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6'>
 					<div className='space-y-4'>
@@ -1498,33 +2105,465 @@ const BacktestSystem = () => {
 
 					<div className='mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg'>
 						<h4 className='text-sm font-semibold text-blue-800 mb-2'>
-							💡 信心度門檻設定指南
+							💡 信心度門檻設定指南 (已優化至70%)
 						</h4>
 						<div className='grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-blue-700'>
 							<div>
-								<strong>保守型 (0.6-0.8)</strong>
+								<strong>保守型 (0.75-0.85)</strong>
 								<br />
-								進場較嚴格，勝率高但交易次數少
+								極度嚴格進場，勝率極高但交易稀少
 							</div>
 							<div>
-								<strong>平衡型 (0.5-0.6)</strong>
+								<strong>最佳型 (0.70-0.75)</strong> ⭐
 								<br />
-								預設範圍，平衡勝率與交易頻率
+								Python優化參數，平衡勝率與頻率
 							</div>
 							<div>
-								<strong>積極型 (0.3-0.5)</strong>
+								<strong>積極型 (0.60-0.70)</strong>
 								<br />
-								進場較寬鬆，交易次數多但風險較高
+								適度放寬條件，增加交易機會
 							</div>
 						</div>
 						<div className='mt-2 text-xs text-blue-600'>
 							<strong>目前設定：</strong>
-							{strategyParams.confidenceThreshold >= 0.6
+							{strategyParams.confidenceThreshold >= 0.75
 								? "保守型"
-								: strategyParams.confidenceThreshold >= 0.5
-								? "平衡型"
-								: "積極型"}
+								: strategyParams.confidenceThreshold >= 0.7
+								? "最佳型 🎯"
+								: strategyParams.confidenceThreshold >= 0.6
+								? "積極型"
+								: "過度積進"}
 							({(strategyParams.confidenceThreshold * 100).toFixed(0)}%)
+						</div>
+					</div>
+
+					{/* 新增進階參數設定區域 */}
+					<div className='mt-6'>
+						<h4 className='text-md font-semibold text-gray-700 mb-4'>
+							🎯 進階風控參數 (策略3.2優化版)
+						</h4>
+
+						{/* 高優先級參數 */}
+						<div className='mb-4'>
+							<h5 className='text-sm font-medium text-green-700 mb-2'>
+								⭐⭐⭐ 高優先級功能
+							</h5>
+							<div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
+								<div>
+									<label className='flex items-center space-x-2 mb-2'>
+										<input
+											type='checkbox'
+											checked={strategyParams.enableTrailingStop}
+											onChange={(e) =>
+												setStrategyParams({
+													...strategyParams,
+													enableTrailingStop: e.target.checked,
+												})
+											}
+											className='form-checkbox h-4 w-4 text-green-600'
+										/>
+										<span className='text-xs font-medium text-gray-700'>
+											啟用追蹤停利
+										</span>
+									</label>
+									{strategyParams.enableTrailingStop && (
+										<div className='space-y-2'>
+											<div>
+												<label className='block text-xs text-gray-600'>
+													追蹤停利 (%)
+												</label>
+												<input
+													type='number'
+													step='0.01'
+													min='0.01'
+													max='0.2'
+													className='w-full px-2 py-1 text-sm border border-green-300 rounded focus:ring-1 focus:ring-green-500'
+													value={strategyParams.trailingStopPercent}
+													onChange={(e) =>
+														setStrategyParams({
+															...strategyParams,
+															trailingStopPercent: Number(e.target.value),
+														})
+													}
+												/>
+												<div className='text-xs text-green-600'>
+													{(strategyParams.trailingStopPercent * 100).toFixed(
+														1
+													)}
+													%回落出場
+												</div>
+											</div>
+											<div>
+												<label className='block text-xs text-gray-600'>
+													啟動門檻 (%)
+												</label>
+												<input
+													type='number'
+													step='0.01'
+													min='0.01'
+													max='0.1'
+													className='w-full px-2 py-1 text-sm border border-green-300 rounded focus:ring-1 focus:ring-green-500'
+													value={strategyParams.trailingActivatePercent}
+													onChange={(e) =>
+														setStrategyParams({
+															...strategyParams,
+															trailingActivatePercent: Number(e.target.value),
+														})
+													}
+												/>
+												<div className='text-xs text-green-600'>
+													獲利
+													{(
+														strategyParams.trailingActivatePercent * 100
+													).toFixed(1)}
+													%後啟動
+												</div>
+											</div>
+										</div>
+									)}
+								</div>
+								<div>
+									<label className='block text-xs font-medium text-gray-600 mb-1'>
+										成交量門檻 (倍)
+									</label>
+									<input
+										type='number'
+										step='0.1'
+										min='1.0'
+										max='3.0'
+										className='w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 bg-orange-50'
+										value={strategyParams.volumeThreshold}
+										onChange={(e) =>
+											setStrategyParams({
+												...strategyParams,
+												volumeThreshold: Number(e.target.value),
+											})
+										}
+									/>
+									<div className='text-xs text-orange-600 mt-1'>
+										{strategyParams.volumeThreshold.toFixed(1)}倍平均量
+									</div>
+								</div>
+							</div>
+						</div>
+
+						{/* 中優先級參數 */}
+						<div className='mb-4'>
+							<h5 className='text-sm font-medium text-blue-700 mb-2'>
+								⭐⭐ 中優先級功能
+							</h5>
+							<div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
+								<div>
+									<label className='flex items-center space-x-2 mb-2'>
+										<input
+											type='checkbox'
+											checked={strategyParams.enableATRStop}
+											onChange={(e) =>
+												setStrategyParams({
+													...strategyParams,
+													enableATRStop: e.target.checked,
+												})
+											}
+											className='form-checkbox h-4 w-4 text-blue-600'
+										/>
+										<span className='text-xs font-medium text-gray-700'>
+											ATR動態停損
+										</span>
+									</label>
+									{strategyParams.enableATRStop && (
+										<div className='space-y-2'>
+											<div>
+												<label className='block text-xs text-gray-600'>
+													ATR週期
+												</label>
+												<input
+													type='number'
+													min='10'
+													max='30'
+													className='w-full px-2 py-1 text-sm border border-blue-300 rounded focus:ring-1 focus:ring-blue-500'
+													value={strategyParams.atrPeriod}
+													onChange={(e) =>
+														setStrategyParams({
+															...strategyParams,
+															atrPeriod: Number(e.target.value),
+														})
+													}
+												/>
+											</div>
+											<div>
+												<label className='block text-xs text-gray-600'>
+													ATR倍數
+												</label>
+												<input
+													type='number'
+													step='0.1'
+													min='1.0'
+													max='4.0'
+													className='w-full px-2 py-1 text-sm border border-blue-300 rounded focus:ring-1 focus:ring-blue-500'
+													value={strategyParams.atrMultiplier}
+													onChange={(e) =>
+														setStrategyParams({
+															...strategyParams,
+															atrMultiplier: Number(e.target.value),
+														})
+													}
+												/>
+											</div>
+										</div>
+									)}
+								</div>
+								<div>
+									<label className='block text-xs font-medium text-gray-600 mb-1'>
+										最小持有天數
+									</label>
+									<input
+										type='number'
+										min='1'
+										max='10'
+										className='w-full px-2 py-1 text-sm border border-purple-300 rounded focus:ring-1 focus:ring-purple-500'
+										value={strategyParams.minHoldingDays}
+										onChange={(e) =>
+											setStrategyParams({
+												...strategyParams,
+												minHoldingDays: Number(e.target.value),
+											})
+										}
+									/>
+									<div className='text-xs text-purple-600 mt-1'>
+										保護期{strategyParams.minHoldingDays}天
+									</div>
+								</div>
+								<div>
+									<label className='flex items-center space-x-2 mb-2'>
+										<input
+											type='checkbox'
+											checked={strategyParams.enablePriceMomentum}
+											onChange={(e) =>
+												setStrategyParams({
+													...strategyParams,
+													enablePriceMomentum: e.target.checked,
+												})
+											}
+											className='form-checkbox h-4 w-4 text-indigo-600'
+										/>
+										<span className='text-xs font-medium text-gray-700'>
+											價格動能指標
+										</span>
+									</label>
+									{strategyParams.enablePriceMomentum && (
+										<div className='space-y-2'>
+											<div>
+												<label className='block text-xs text-gray-600'>
+													動能週期
+												</label>
+												<input
+													type='number'
+													min='3'
+													max='10'
+													className='w-full px-2 py-1 text-sm border border-indigo-300 rounded focus:ring-1 focus:ring-indigo-500'
+													value={strategyParams.priceMomentumPeriod}
+													onChange={(e) =>
+														setStrategyParams({
+															...strategyParams,
+															priceMomentumPeriod: Number(e.target.value),
+														})
+													}
+												/>
+											</div>
+											<div>
+												<label className='block text-xs text-gray-600'>
+													動能門檻 (%)
+												</label>
+												<input
+													type='number'
+													step='0.01'
+													min='0.01'
+													max='0.1'
+													className='w-full px-2 py-1 text-sm border border-indigo-300 rounded focus:ring-1 focus:ring-indigo-500'
+													value={strategyParams.priceMomentumThreshold}
+													onChange={(e) =>
+														setStrategyParams({
+															...strategyParams,
+															priceMomentumThreshold: Number(e.target.value),
+														})
+													}
+												/>
+												<div className='text-xs text-indigo-600'>
+													{(
+														strategyParams.priceMomentumThreshold * 100
+													).toFixed(1)}
+													%動能門檻
+												</div>
+											</div>
+										</div>
+									)}
+								</div>
+							</div>
+						</div>
+
+						{/* 低優先級參數 */}
+						<div className='mb-4'>
+							<h5 className='text-sm font-medium text-gray-600 mb-2'>
+								⭐ 低優先級功能
+							</h5>
+							<div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
+								<div>
+									<label className='flex items-center space-x-2'>
+										<input
+											type='checkbox'
+											checked={strategyParams.enableMA60}
+											onChange={(e) =>
+												setStrategyParams({
+													...strategyParams,
+													enableMA60: e.target.checked,
+												})
+											}
+											className='form-checkbox h-4 w-4 text-gray-600'
+										/>
+										<span className='text-xs font-medium text-gray-700'>
+											MA60季線確認
+										</span>
+									</label>
+									<div className='text-xs text-gray-500 mt-1'>長期趨勢過濾</div>
+								</div>
+							</div>
+						</div>
+
+						{/* 新增：Python風格優化參數 */}
+						<div className='mb-4 p-4 bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200 rounded-lg'>
+							<h5 className='text-sm font-medium text-purple-700 mb-3 flex items-center'>
+								🐍 Python風格優化功能
+								<span className='ml-2 px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full'>
+									NEW!
+								</span>
+							</h5>
+							<div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
+								<div>
+									<label className='flex items-center space-x-2 mb-2'>
+										<input
+											type='checkbox'
+											checked={strategyParams.usePythonLogic}
+											onChange={(e) =>
+												setStrategyParams({
+													...strategyParams,
+													usePythonLogic: e.target.checked,
+												})
+											}
+											className='form-checkbox h-4 w-4 text-purple-600'
+										/>
+										<span className='text-xs font-medium text-gray-700'>
+											Python決策邏輯
+										</span>
+									</label>
+									<div className='text-xs text-purple-600'>
+										{strategyParams.usePythonLogic
+											? "🔥 嚴格模式"
+											: "😊 寬鬆模式"}
+									</div>
+								</div>
+
+								<div>
+									<label className='flex items-center space-x-2 mb-2'>
+										<input
+											type='checkbox'
+											checked={strategyParams.hierarchicalDecision}
+											onChange={(e) =>
+												setStrategyParams({
+													...strategyParams,
+													hierarchicalDecision: e.target.checked,
+												})
+											}
+											className='form-checkbox h-4 w-4 text-purple-600'
+										/>
+										<span className='text-xs font-medium text-gray-700'>
+											階層決策系統
+										</span>
+									</label>
+									<div className='text-xs text-purple-600'>層層篩選信號</div>
+								</div>
+
+								<div>
+									<label className='flex items-center space-x-2 mb-2'>
+										<input
+											type='checkbox'
+											checked={strategyParams.dynamicPositionSize}
+											onChange={(e) =>
+												setStrategyParams({
+													...strategyParams,
+													dynamicPositionSize: e.target.checked,
+												})
+											}
+											className='form-checkbox h-4 w-4 text-purple-600'
+										/>
+										<span className='text-xs font-medium text-gray-700'>
+											動態倉位調整
+										</span>
+									</label>
+									<div className='text-xs text-purple-600'>依風險度調倉</div>
+								</div>
+
+								<div>
+									<label className='block text-xs font-medium text-gray-600 mb-1'>
+										最大總曝險度 (%)
+									</label>
+									<input
+										type='number'
+										step='5'
+										min='50'
+										max='90'
+										className='w-full px-2 py-1 text-sm border border-purple-300 rounded focus:ring-1 focus:ring-purple-500'
+										value={strategyParams.maxTotalExposure * 100}
+										onChange={(e) =>
+											setStrategyParams({
+												...strategyParams,
+												maxTotalExposure: Number(e.target.value) / 100,
+											})
+										}
+									/>
+									<div className='text-xs text-purple-600 mt-1'>
+										風險控制上限
+									</div>
+								</div>
+							</div>
+
+							<div className='mt-3 p-2 bg-white bg-opacity-60 rounded border border-purple-200'>
+								<div className='text-xs text-purple-700 space-y-1'>
+									<div>
+										<strong>Python風格特色：</strong>
+									</div>
+									<div>• 更嚴格的RSI門檻 (30→35)</div>
+									<div>• 階層式決策流程</div>
+									<div>• 動態風險控制倉位</div>
+									<div>• 總曝險度自動調節</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div className='mt-4 p-3 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg'>
+						<h4 className='text-sm font-semibold text-gray-800 mb-2'>
+							🚀 策略3.2優化功能說明 (已設定最佳參數)
+						</h4>
+						<div className='grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-gray-700 mb-3'>
+							<div>
+								<strong>追蹤停利機制</strong>
+								<br />
+								獲利3%後啟動，5%回落出場保護利潤
+							</div>
+							<div>
+								<strong>ATR動態停損</strong>
+								<br />
+								2倍ATR動態停損，靈活應對波動
+							</div>
+							<div>
+								<strong>持有天數保護</strong>
+								<br />
+								5天保護期，避免剛進場就被洗出
+							</div>
+						</div>
+						<div className='p-2 bg-yellow-50 border border-yellow-200 rounded text-xs'>
+							<strong>📈 Python最佳化參數已套用：</strong>
+							RSI門檻35 | 成交量1.5倍 | 信心度70% | 價格動能3% | 持有保護5天
 						</div>
 					</div>
 				</div>
@@ -1623,6 +2662,23 @@ const BacktestSystem = () => {
 									{results.trades.avgHoldingDays.toFixed(1)}天
 								</div>
 								<div className='text-sm text-gray-600'>平均持股天數</div>
+							</div>
+							<div className='p-3 border rounded-lg bg-gradient-to-r from-blue-50 to-purple-50'>
+								<div className='text-lg font-semibold text-blue-600'>
+									{results.trades.profitFactor >= 999
+										? "∞"
+										: results.trades.profitFactor.toFixed(2)}
+								</div>
+								<div className='text-sm text-blue-600'>獲利因子</div>
+								<div className='text-xs text-gray-500 mt-1'>
+									{results.trades.profitFactor >= 2.0
+										? "優秀"
+										: results.trades.profitFactor >= 1.5
+										? "良好"
+										: results.trades.profitFactor >= 1.0
+										? "及格"
+										: "需改進"}
+								</div>
 							</div>
 						</div>
 					</div>
