@@ -1,4 +1,5 @@
 import { StockData } from '../interfaces/stockData';
+import { RawStockData } from '../interfaces/stockData';
 
 /*
  * 解析 Yahoo Finance Chart API 返回的數據
@@ -204,7 +205,7 @@ export const fetchFubonData = async (
     );
 
     const result = await res.json();
-    const data = result.map((item: any) => ({
+    const data = result.map((item: RawStockData) => ({
       ...item,
       date: new Date(item.date),
     }));
