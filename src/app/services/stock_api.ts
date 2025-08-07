@@ -1,6 +1,59 @@
 import { StockData } from '../interfaces/stockData';
 import { RawStockData } from '../interfaces/stockData';
 
+/**
+ * 動態檢查是否為交易日（基於實際數據）
+ * @param date - 要檢查的日期
+ * @param stockDataMap - 股票數據映射，用於檢查是否有數據
+ * @returns boolean - 是否為交易日
+ */
+export const isTradingDay = (
+  date: Date,
+  stockDataMap?: Record<string, StockData[]>,
+): boolean => {
+  // 如果沒有提供股票數據，無法判斷，直接返回 false
+  if (!stockDataMap || Object.keys(stockDataMap).length === 0) {
+    return false;
+  }
+
+  // 檢查是否有任何股票在該日有數據
+  const dateStr = date.toISOString().split('T')[0];
+  for (const stockData of Object.values(stockDataMap)) {
+    const hasDataOnDate = stockData.some(
+      (data) => data.date.toISOString().split('T')[0] === dateStr,
+    );
+    if (hasDataOnDate) {
+      return true; // 有交易紀錄就是交易日（包含補班日）
+    }
+  }
+
+  return false; // 沒有交易紀錄就是休假日
+};
+
+/**
+ * 找到下一個交易日
+ * @param fromDate - 起始日期
+ * @param stockDataMap - 股票數據映射
+ * @param maxDaysToCheck - 最多檢查的天數（預設10天）
+ * @returns Date | null - 下一個交易日，如果找不到則返回null
+ */
+export const findNextTradingDay = (
+  fromDate: Date,
+  stockDataMap: Record<string, StockData[]>,
+  maxDaysToCheck: number = 10,
+): Date | null => {
+  const checkDate = new Date(fromDate);
+
+  for (let i = 0; i < maxDaysToCheck; i++) {
+    checkDate.setDate(checkDate.getDate() + 1);
+    if (isTradingDay(checkDate, stockDataMap)) {
+      return new Date(checkDate);
+    }
+  }
+
+  return null; // 10天內找不到交易日
+};
+
 /*
  * 解析 Yahoo Finance Chart API 返回的數據
  * @param chartResult - Yahoo API 返回的圖表數據
@@ -42,13 +95,14 @@ export const parseYahooChartData = (
     }
 
     const rawData = timestamp.map((ts, index) => {
-      // 將時間戳轉換為交易日期（去除時間部分，只保留日期）
+      // 將時間戳轉換為交易日期（統一使用 UTC 日期，避免時區問題）
       const utcDate = new Date(ts * 1000);
-      // 建立台北時區的日期，但只保留日期部分
       const year = utcDate.getUTCFullYear();
       const month = utcDate.getUTCMonth();
       const day = utcDate.getUTCDate();
-      const tradingDate = new Date(year, month, day);
+
+      // 🔍 使用 UTC 創建日期，避免本地時區影響
+      const tradingDate = new Date(Date.UTC(year, month, day));
 
       return {
         symbol: symbol,
@@ -83,6 +137,9 @@ export const parseYahooChartData = (
       const dateStr = data.date.toISOString().split('T')[0];
       const inDateRange = dateStr >= startDate && dateStr <= endDate;
       const hasValidPrice = data.close > 0;
+
+      // 使用更寬鬆的條件：只要有有效價格且在日期範圍內就保留
+      // 這樣可以包含補班日的數據，讓 isTradingDay 來做最終判斷
       return inDateRange && hasValidPrice;
     });
 

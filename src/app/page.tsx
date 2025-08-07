@@ -17,8 +17,9 @@ import {
 } from 'recharts';
 import {
   parseYahooChartData,
-  fetchTWSEData,
   fetchFubonData,
+  isTradingDay,
+  findNextTradingDay,
 } from './services/stock_api';
 
 // 型別定義
@@ -52,10 +53,16 @@ interface StockData {
 interface TradeResult {
   stock: string;
   action: string;
-  date: Date;
+  date: Date; // 實際執行日期（買入/賣出）
   price: number;
   quantity: number;
   amount: number;
+  // 詳細日期資訊
+  buySignalDate?: Date; // 買進訊號日期
+  sellSignalDate?: Date; // 賣出訊號日期
+  actualBuyDate?: Date; // 實際購買日期
+  actualSellDate?: Date; // 實際賣出日期
+  // 舊欄位保留向後相容
   entryPrice?: number;
   entryDate?: Date;
   holdingDays?: number;
@@ -66,11 +73,12 @@ interface TradeResult {
 }
 
 interface Position {
-  entryDate: Date;
+  entryDate: Date; // 實際進場日期
   entryPrice: number;
   quantity: number;
   investAmount: number;
   confidence?: number;
+  buySignalDate?: Date; // 買進訊號日期
   // 新增追蹤停利相關欄位
   highPriceSinceEntry: number; // 進場後最高價
   trailingStopPrice: number; // 追蹤停損價
@@ -157,6 +165,9 @@ interface SellSignalResult {
 }
 
 const BacktestSystem = () => {
+  // 暗亮模式狀態
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+
   const [stocks, setStocks] = useState<string[]>(['2330', '2454', '2317']);
   const [startDate, setStartDate] = useState<string>('2020-01-01');
   const [endDate, setEndDate] = useState<string>('2025-08-05');
@@ -164,6 +175,27 @@ const BacktestSystem = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [results, setResults] = useState<BacktestResults | null>(null);
   const [newStock, setNewStock] = useState<string>('');
+
+  // 暗亮模式切換功能
+  const toggleDarkMode = () => {
+    setIsDarkMode(!isDarkMode);
+    // 保存用戶偏好到 localStorage
+    localStorage.setItem('darkMode', (!isDarkMode).toString());
+  };
+
+  // 從 localStorage 恢復暗亮模式設定
+  React.useEffect(() => {
+    const savedDarkMode = localStorage.getItem('darkMode');
+    if (savedDarkMode !== null) {
+      setIsDarkMode(savedDarkMode === 'true');
+    } else {
+      // 偵測系統偏好
+      const prefersDark = window.matchMedia(
+        '(prefers-color-scheme: dark)',
+      ).matches;
+      setIsDarkMode(prefersDark);
+    }
+  }, []);
 
   const [strategyParams, setStrategyParams] = useState<StrategyParams>({
     // 基礎技術指標參數 (與Python一致)
@@ -322,19 +354,6 @@ const BacktestSystem = () => {
       }
     } catch (error) {
       console.log(`⚠️ Yahoo Finance Chart API 整體失敗:`, error);
-    }
-
-    // 方法3: 使用台灣證券交易所官方API
-    try {
-      const twseData = await fetchTWSEData(symbol, startDate, endDate);
-      if (twseData.length > 0) {
-        console.log(
-          `✅ 台灣證交所API成功獲取 ${symbol} 數據: ${twseData.length} 天`,
-        );
-        return twseData;
-      }
-    } catch (error) {
-      console.log(`⚠️ 台灣證交所API失敗:`, error);
     }
 
     // 如果所有方法都失敗，拋出錯誤
@@ -979,7 +998,9 @@ const BacktestSystem = () => {
             signal: true,
             reason: `追蹤停利出場，最高點回落: ${(
               strategyParams.trailingStopPercent * 100
-            ).toFixed(1)}%，獲利: ${(profitRate * 100).toFixed(2)}%`,
+            ).toFixed(1)}%，最高獲利: ${(profitSinceEntry * 100).toFixed(
+              2,
+            )}%，當前獲利: ${(profitRate * 100).toFixed(2)}%`,
           };
         }
       }
@@ -1202,6 +1223,24 @@ const BacktestSystem = () => {
       let currentCapital = initialCapital;
       const trades: TradeResult[] = [];
       const positions: Record<string, Position> = {};
+      const pendingBuyOrders: Record<
+        string,
+        {
+          confidence: number;
+          reason: string;
+          signalDate: Date;
+          targetExecutionDate: Date | null;
+        }
+      > = {}; // 待執行的買入訂單
+      const pendingSellOrders: Record<
+        string,
+        {
+          reason: string;
+          signalDate: Date;
+          targetExecutionDate: Date | null;
+          position: Position;
+        }
+      > = {}; // 待執行的賣出訂單
       const equityCurve: {
         date: string;
         value: number;
@@ -1262,11 +1301,32 @@ const BacktestSystem = () => {
       for (const dateStr of allDates) {
         const currentDate = new Date(dateStr);
 
+        // 使用動態交易日判斷，如果不是則跳過
+        if (!isTradingDay(currentDate, allStockData)) {
+          const dayName = [
+            '星期日',
+            '星期一',
+            '星期二',
+            '星期三',
+            '星期四',
+            '星期五',
+            '星期六',
+          ][currentDate.getDay()];
+          console.log(`📅 跳過非交易日: ${dateStr} (${dayName})`);
+          continue;
+        }
+
         for (const stock of validStocks) {
           const stockData = allStockData[stock];
           const currentIndex = stockData.findIndex(
             (d) => d.date.toISOString().split('T')[0] === dateStr,
           );
+
+          // 🔍 檢查是否找到當前日期的數據
+          if (currentIndex === -1) {
+            console.log(`⚠️ ${dateStr} ${stock} 找不到數據，跳過處理`);
+            continue;
+          }
 
           // 確保指標數據已經計算完成（至少需要 MACD 計算完成的天數）
           const minRequiredIndex =
@@ -1276,12 +1336,214 @@ const BacktestSystem = () => {
           const current = stockData[currentIndex];
           const previous = stockData[currentIndex - 1];
 
+          // 🔍 重要：驗證日期匹配性，如果不匹配則跳過
+          const currentDataDateStr = current.date.toISOString().split('T')[0];
+          if (currentDataDateStr !== dateStr) {
+            console.log(`❌ ${dateStr} ${stock} 日期不匹配！
+            迴圈日期: ${dateStr}
+            數據日期: ${currentDataDateStr}
+            跳過此股票處理`);
+            continue;
+          }
+
+          console.log(`✅ ${dateStr} ${stock} 日期匹配確認 - 使用正確數據`);
+
           // 確認當前數據有完整的技術指標
           if (!current.rsi || !current.macd || !current.macdSignal) {
             console.log(
               `🚫 ${dateStr} ${stock} 指標數據不完整: RSI=${current.rsi}, MACD=${current.macd}, Signal=${current.macdSignal}`,
             );
             continue;
+          }
+
+          // 首先處理待執行的賣出訂單（使用T+1日開盤價）
+          if (pendingSellOrders[stock]) {
+            const sellOrder = pendingSellOrders[stock];
+
+            // 彈性T+1邏輯：目標日期或之後的第一個有資料日執行
+            const shouldExecute =
+              sellOrder.targetExecutionDate &&
+              currentDate >= sellOrder.targetExecutionDate;
+
+            if (shouldExecute) {
+              const position = sellOrder.position;
+
+              // 使用開盤價計算賣出
+              const sellAmount = current.open * position.quantity * 0.995575; // 修正：扣除0.4425%手續費+交易稅
+              const profit = sellAmount - position.investAmount;
+              const profitRate = profit / position.investAmount;
+              const holdingDays = Math.floor(
+                (currentDate.getTime() - position.entryDate.getTime()) /
+                  (1000 * 60 * 60 * 24),
+              );
+
+              // 檢查是否延後執行
+              const targetDateStr =
+                sellOrder.targetExecutionDate?.toISOString().split('T')[0] ||
+                '未設定';
+              const isDelayed = targetDateStr !== dateStr;
+              const delayInfo = isDelayed
+                ? ` (原定${targetDateStr}，延後執行)`
+                : '';
+
+              console.log(
+                `💰 ${dateStr} ${stock} T+1賣出執行${delayInfo}: 出場價${current.open.toFixed(
+                  2,
+                )} | 獲利率${(profitRate * 100).toFixed(
+                  2,
+                )}% | 持有${holdingDays}天`,
+              );
+
+              // 從原始reason中提取基本原因，移除舊的獲利率資訊
+              let baseReason = sellOrder.reason;
+              // 移除可能存在的獲利率信息（如"當前獲利: X%"、"獲利: X%"、"虧損: X%"等）
+              baseReason = baseReason.replace(
+                /，[最高獲利當前虧損]{2,4}:\s*-?\d+\.?\d*%/g,
+                '',
+              );
+              baseReason = baseReason.replace(/，獲利:\s*-?\d+\.?\d*%/g, '');
+              baseReason = baseReason.replace(/，虧損:\s*-?\d+\.?\d*%/g, '');
+
+              // 根據實際獲利率添加正確的後綴
+              const actualReason =
+                profitRate >= 0
+                  ? `${baseReason}，實際獲利: ${(profitRate * 100).toFixed(2)}%`
+                  : `${baseReason}，實際虧損: ${(
+                      Math.abs(profitRate) * 100
+                    ).toFixed(2)}%`;
+
+              trades.push({
+                stock,
+                action: 'SELL',
+                date: currentDate, // T+1賣出執行日期
+                price: current.open, // T+1開盤價
+                quantity: position.quantity,
+                amount: sellAmount,
+                entryPrice: position.entryPrice,
+                entryDate: position.entryDate,
+                holdingDays,
+                profit,
+                profitRate,
+                confidence: position.confidence,
+                reason: `${actualReason} (T+1開盤價執行)`,
+                // 詳細日期資訊
+                buySignalDate: position.buySignalDate, // 原始買進訊號日期
+                sellSignalDate: sellOrder.signalDate, // 賣出訊號日期
+                actualBuyDate: position.entryDate, // 實際購買日期
+                actualSellDate: currentDate, // 實際賣出日期
+              });
+
+              currentCapital += sellAmount;
+              delete positions[stock];
+              delete pendingSellOrders[stock];
+            }
+          }
+
+          // 然後處理待執行的買入訂單（使用T+1日開盤價）
+          if (pendingBuyOrders[stock]) {
+            const buyOrder = pendingBuyOrders[stock];
+
+            // 彈性T+1邏輯：目標日期或之後的第一個有資料日執行
+            const shouldExecute =
+              buyOrder.targetExecutionDate &&
+              currentDate >= buyOrder.targetExecutionDate;
+
+            if (shouldExecute) {
+              // 優化版：使用動態倉位管理系統
+              const currentExposure = calculateCurrentExposure(
+                positions,
+                currentCapital,
+                allStockData,
+                dateStr,
+              );
+
+              const dynamicPositionSize = calculateDynamicPositionSize(
+                buyOrder.confidence || 0,
+                currentExposure,
+              );
+
+              const investAmount = Math.min(
+                currentCapital * dynamicPositionSize,
+                currentCapital * strategyParams.maxPositionSize,
+              );
+
+              console.log(`💰 ${dateStr} ${stock} T+1執行買入 (開盤價):
+							信心度: ${((buyOrder.confidence || 0) * 100).toFixed(1)}%
+							當前曝險度: ${(currentExposure * 100).toFixed(1)}%
+							動態倉位: ${(dynamicPositionSize * 100).toFixed(1)}%
+							投資金額: ${investAmount.toLocaleString()}`);
+
+              if (investAmount > 10000) {
+                // 使用開盤價計算
+                const quantity = Math.floor(
+                  investAmount / (current.open * 1.001425),
+                );
+                const actualInvestAmount = current.open * quantity * 1.001425;
+
+                // 檢查是否延後執行
+                const targetDateStr =
+                  buyOrder.targetExecutionDate?.toISOString().split('T')[0] ||
+                  '未設定';
+                const isDelayed = targetDateStr !== dateStr;
+                const delayInfo = isDelayed
+                  ? ` (原定${targetDateStr}，延後執行)`
+                  : '';
+
+                console.log(
+                  `💰 ${dateStr} ${stock} T+1買入執行${delayInfo}: 進場價${current.open.toFixed(
+                    2,
+                  )} | 股數${quantity.toLocaleString()} | 投資${actualInvestAmount.toLocaleString()}`,
+                );
+
+                if (actualInvestAmount <= currentCapital) {
+                  positions[stock] = {
+                    entryDate: currentDate, // 實際進場日期（T+1執行日）
+                    entryPrice: current.open, // 使用T+1日開盤價
+                    quantity,
+                    investAmount: actualInvestAmount,
+                    confidence: buyOrder.confidence,
+                    buySignalDate: buyOrder.signalDate, // 記錄原始訊號日期
+                    // 初始化追蹤停利相關欄位
+                    highPriceSinceEntry: current.open,
+                    trailingStopPrice:
+                      current.open * (1 - strategyParams.trailingStopPercent),
+                    atrStopPrice: current.atr
+                      ? current.open -
+                        strategyParams.atrMultiplier * current.atr
+                      : undefined,
+                    entryATR: current.atr,
+                  };
+
+                  trades.push({
+                    stock,
+                    action: 'BUY',
+                    date: currentDate, // 實際交易日期
+                    price: current.open, // T+1開盤價
+                    quantity,
+                    amount: actualInvestAmount,
+                    confidence: buyOrder.confidence,
+                    reason: `${buyOrder.reason} (T+1開盤價執行)`,
+                    // 詳細日期資訊
+                    buySignalDate: buyOrder.signalDate, // 買進訊號日期
+                    actualBuyDate: currentDate, // 實際購買日期
+                    entryDate: currentDate, // 向後相容
+                    entryPrice: current.open, // 向後相容
+                  });
+
+                  currentCapital -= actualInvestAmount;
+                  console.log(
+                    `✅ ${dateStr} ${stock} T+1買入成功: 餘額${currentCapital.toLocaleString()}`,
+                  );
+                }
+              } else {
+                console.log(
+                  `💸 ${dateStr} ${stock} T+1投資金額不足最低要求 (${investAmount.toLocaleString()} < 10,000)`,
+                );
+              }
+
+              // 清除已執行的買入訂單
+              delete pendingBuyOrders[stock];
+            }
           }
 
           // 添加調試信息來檢查數據
@@ -1295,7 +1557,8 @@ const BacktestSystem = () => {
             );
           }
 
-          if (positions[stock]) {
+          // 處理賣出信號檢查（產生T+1賣出訂單）
+          if (positions[stock] && !pendingSellOrders[stock]) {
             const position = positions[stock];
             const holdingDays = Math.floor(
               (currentDate.getTime() - position.entryDate.getTime()) /
@@ -1304,107 +1567,53 @@ const BacktestSystem = () => {
             const sellCheck = checkSellSignal(current, position, holdingDays);
 
             if (sellCheck.signal) {
-              const sellAmount = current.close * position.quantity * 0.9965;
-              const profit = sellAmount - position.investAmount;
-              const profitRate = profit / position.investAmount;
+              // 計算下一個交易日，用於T+1執行
+              const nextTradingDay = findNextTradingDay(
+                currentDate,
+                allStockData,
+              );
 
-              trades.push({
-                stock,
-                action: 'SELL',
-                date: currentDate,
-                price: current.close,
-                quantity: position.quantity,
-                amount: sellAmount,
-                entryPrice: position.entryPrice,
-                entryDate: position.entryDate,
-                holdingDays,
-                profit,
-                profitRate,
-                confidence: position.confidence,
+              // 產生T+1賣出訂單
+              pendingSellOrders[stock] = {
                 reason: sellCheck.reason,
-              });
+                signalDate: currentDate,
+                targetExecutionDate: nextTradingDay, // 記錄目標執行日期
+                position: { ...position }, // 複製position避免後續修改影響
+              };
 
-              currentCapital += sellAmount;
-              delete positions[stock];
+              console.log(`📋 ${dateStr} ${stock} 產生T+1賣出訂單:
+							信號價格: ${current.close.toFixed(2)}
+							原因: ${sellCheck.reason}
+							目標執行日: ${nextTradingDay?.toISOString().split('T')[0] || '待確定'}
+							將於下一交易日開盤執行`);
             }
           }
 
-          if (!positions[stock]) {
+          // 處理買入信號檢查（產生T+1買入訂單）
+          if (!positions[stock] && !pendingBuyOrders[stock]) {
             const buyCheck = checkBuySignal(current, previous);
 
             if (buyCheck.signal) {
-              // 優化版：使用動態倉位管理系統
-              const currentExposure = calculateCurrentExposure(
-                positions,
-                currentCapital,
+              // 計算下一個交易日，用於T+1執行
+              const nextTradingDay = findNextTradingDay(
+                currentDate,
                 allStockData,
-                dateStr,
               );
 
-              const dynamicPositionSize = calculateDynamicPositionSize(
-                buyCheck.confidence || 0,
-                currentExposure,
-              );
+              // 產生T+1買入訂單
+              pendingBuyOrders[stock] = {
+                confidence: buyCheck.confidence || 0,
+                reason: buyCheck.reason,
+                signalDate: currentDate,
+                targetExecutionDate: nextTradingDay, // 記錄目標執行日期
+              };
 
-              const investAmount = Math.min(
-                currentCapital * dynamicPositionSize,
-                currentCapital * strategyParams.maxPositionSize,
-              );
-
-              console.log(`💰 ${dateStr} ${stock} 倉位計算:
-								信心度: ${((buyCheck.confidence || 0) * 100).toFixed(1)}%
-								當前曝險度: ${(currentExposure * 100).toFixed(1)}%
-								動態倉位: ${(dynamicPositionSize * 100).toFixed(1)}%
-								投資金額: ${investAmount.toLocaleString()}`);
-
-              if (investAmount > 10000) {
-                const quantity = Math.floor(
-                  investAmount / (current.close * 1.001425),
-                );
-                const actualInvestAmount = current.close * quantity * 1.001425;
-
-                if (actualInvestAmount <= currentCapital) {
-                  positions[stock] = {
-                    entryDate: currentDate,
-                    entryPrice: current.close,
-                    quantity,
-                    investAmount: actualInvestAmount,
-                    confidence: buyCheck.confidence,
-                    // 初始化追蹤停利相關欄位
-                    highPriceSinceEntry: current.close,
-                    trailingStopPrice:
-                      current.close * (1 - strategyParams.trailingStopPercent),
-                    atrStopPrice: current.atr
-                      ? current.close -
-                        strategyParams.atrMultiplier * current.atr
-                      : undefined,
-                    entryATR: current.atr,
-                  };
-
-                  trades.push({
-                    stock,
-                    action: 'BUY',
-                    date: currentDate,
-                    price: current.close,
-                    quantity,
-                    amount: actualInvestAmount,
-                    confidence: buyCheck.confidence,
-                    reason: buyCheck.reason,
-                  });
-
-                  currentCapital -= actualInvestAmount;
-
-                  console.log(`✅ ${dateStr} ${stock} 買入成功:
-										價格: ${current.close}
-										數量: ${quantity}
-										金額: ${actualInvestAmount.toLocaleString()}
-										剩餘現金: ${currentCapital.toLocaleString()}`);
-                }
-              } else {
-                console.log(
-                  `💸 ${dateStr} ${stock} 投資金額不足最低要求 (${investAmount.toLocaleString()} < 10,000)`,
-                );
-              }
+              console.log(`📋 ${dateStr} ${stock} 產生T+1買入訊號:
+							信號價格: ${current.close}
+							信心度: ${((buyCheck.confidence || 0) * 100).toFixed(1)}%
+							原因: ${buyCheck.reason}
+							目標執行日: ${nextTradingDay?.toISOString().split('T')[0] || '待確定'}
+							將於下一交易日開盤執行`);
             }
           }
         }
@@ -1426,6 +1635,38 @@ const BacktestSystem = () => {
           value: totalValue,
           cash: currentCapital,
           positions: positionValue,
+        });
+      }
+
+      // 記錄回測結束時的待執行訂單（應該很少，因為採用延後執行策略）
+      const pendingBuyOrdersCount = Object.keys(pendingBuyOrders).length;
+      const pendingSellOrdersCount = Object.keys(pendingSellOrders).length;
+
+      if (pendingBuyOrdersCount > 0) {
+        console.log(
+          `⚠️ 回測結束時仍有 ${pendingBuyOrdersCount} 個未執行的買入訂單：`,
+        );
+        Object.entries(pendingBuyOrders).forEach(([stock, order]) => {
+          const signalDate = order.signalDate.toISOString().split('T')[0];
+          const targetDate =
+            order.targetExecutionDate?.toISOString().split('T')[0] || '未設定';
+          console.log(
+            `   ${stock}: 訊號日期 ${signalDate}, 目標執行日期 ${targetDate} - 原因: 回測期間結束前未找到交易日`,
+          );
+        });
+      }
+
+      if (pendingSellOrdersCount > 0) {
+        console.log(
+          `⚠️ 回測結束時仍有 ${pendingSellOrdersCount} 個未執行的賣出訂單：`,
+        );
+        Object.entries(pendingSellOrders).forEach(([stock, order]) => {
+          const signalDate = order.signalDate.toISOString().split('T')[0];
+          const targetDate =
+            order.targetExecutionDate?.toISOString().split('T')[0] || '未設定';
+          console.log(
+            `   ${stock}: 訊號日期 ${signalDate}, 目標執行日期 ${targetDate} - 原因: 回測期間結束前未找到交易日`,
+          );
         });
       }
 
@@ -1593,9 +1834,48 @@ const BacktestSystem = () => {
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
   return (
-    <div className="w-full max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
-      <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-        <h1 className="text-3xl font-bold text-center mb-4 text-gray-800">
+    <div
+      className={`w-full max-w-7xl mx-auto p-6 min-h-screen transition-colors duration-300 ${
+        isDarkMode ? 'bg-gray-900' : 'bg-gray-50'
+      }`}
+    >
+      {/* 暗亮模式切換按鈕 */}
+      <div className="fixed top-4 right-4 z-50">
+        <button
+          onClick={toggleDarkMode}
+          className={`p-3 rounded-full shadow-lg transition-all duration-300 hover:scale-110 ${
+            isDarkMode
+              ? 'bg-yellow-400 text-gray-900 hover:bg-yellow-300'
+              : 'bg-gray-800 text-yellow-400 hover:bg-gray-700'
+          }`}
+          title={isDarkMode ? '切換到亮色模式' : '切換到暗色模式'}
+        >
+          {isDarkMode ? (
+            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"
+                clipRule="evenodd"
+              />
+            </svg>
+          ) : (
+            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+            </svg>
+          )}
+        </button>
+      </div>
+
+      <div
+        className={`rounded-lg shadow-lg p-6 mb-6 transition-colors duration-300 ${
+          isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+        }`}
+      >
+        <h1
+          className={`text-3xl font-bold text-center mb-4 transition-colors duration-300 ${
+            isDarkMode ? 'text-white' : 'text-gray-800'
+          }`}
+        >
           策略3.2 優化動態回測系統
         </h1>
         <div className="text-center mb-6">
@@ -1604,27 +1884,75 @@ const BacktestSystem = () => {
           </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-sm">
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-100 p-4 rounded-lg border border-blue-200">
-            <h3 className="font-semibold text-blue-800 mb-2">🐍 Python精華</h3>
-            <ul className="text-blue-700 space-y-1 text-xs">
+          <div
+            className={`p-4 rounded-lg border transition-colors duration-300 ${
+              isDarkMode
+                ? 'bg-gradient-to-br from-blue-900/50 to-indigo-900/50 border-blue-700 text-blue-300'
+                : 'bg-gradient-to-br from-blue-50 to-indigo-100 border-blue-200'
+            }`}
+          >
+            <h3
+              className={`font-semibold mb-2 ${
+                isDarkMode ? 'text-blue-300' : 'text-blue-800'
+              }`}
+            >
+              🐍 Python精華
+            </h3>
+            <ul
+              className={`space-y-1 text-xs ${
+                isDarkMode ? 'text-blue-200' : 'text-blue-700'
+              }`}
+            >
               <li>• 階層決策系統</li>
               <li>• 動態倉位管理</li>
               <li>• 嚴格信號篩選</li>
               <li>• 風險曝險控制</li>
             </ul>
           </div>
-          <div className="bg-gradient-to-br from-green-50 to-emerald-100 p-4 rounded-lg border border-green-200">
-            <h3 className="font-semibold text-green-800 mb-2">⚛️ React優勢</h3>
-            <ul className="text-green-700 space-y-1 text-xs">
+          <div
+            className={`p-4 rounded-lg border transition-colors duration-300 ${
+              isDarkMode
+                ? 'bg-gradient-to-br from-green-900/50 to-emerald-900/50 border-green-700'
+                : 'bg-gradient-to-br from-green-50 to-emerald-100 border-green-200'
+            }`}
+          >
+            <h3
+              className={`font-semibold mb-2 ${
+                isDarkMode ? 'text-green-300' : 'text-green-800'
+              }`}
+            >
+              ⚛️ React優勢
+            </h3>
+            <ul
+              className={`space-y-1 text-xs ${
+                isDarkMode ? 'text-green-200' : 'text-green-700'
+              }`}
+            >
               <li>• 即時參數調整</li>
               <li>• 視覺化分析</li>
               <li>• 多資料源整合</li>
               <li>• 完整追蹤停利</li>
             </ul>
           </div>
-          <div className="bg-gradient-to-br from-purple-50 to-pink-100 p-4 rounded-lg border border-purple-200">
-            <h3 className="font-semibold text-purple-800 mb-2">✨ 融合創新</h3>
-            <ul className="text-purple-700 space-y-1 text-xs">
+          <div
+            className={`p-4 rounded-lg border transition-colors duration-300 ${
+              isDarkMode
+                ? 'bg-gradient-to-br from-purple-900/50 to-pink-900/50 border-purple-700'
+                : 'bg-gradient-to-br from-purple-50 to-pink-100 border-purple-200'
+            }`}
+          >
+            <h3
+              className={`font-semibold mb-2 ${
+                isDarkMode ? 'text-purple-300' : 'text-purple-800'
+              }`}
+            >
+              ✨ 融合創新
+            </h3>
+            <ul
+              className={`space-y-1 text-xs ${
+                isDarkMode ? 'text-purple-200' : 'text-purple-700'
+              }`}
+            >
               <li>• 雙模式切換</li>
               <li>• 智能風控</li>
               <li>• 專業指標算法</li>
@@ -1635,12 +1963,22 @@ const BacktestSystem = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-700">股票設定</h3>
+            <h3
+              className={`text-lg font-semibold transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-700'
+              }`}
+            >
+              股票設定
+            </h3>
             <div className="flex gap-2">
               <input
                 type="text"
                 placeholder="輸入股票代碼"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                }`}
                 value={newStock}
                 onChange={(e) => setNewStock(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && addStock()}
@@ -1656,12 +1994,20 @@ const BacktestSystem = () => {
               {stocks.map((stock) => (
                 <span
                   key={stock}
-                  className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-colors duration-300 ${
+                    isDarkMode
+                      ? 'bg-blue-900/50 text-blue-300 border border-blue-700'
+                      : 'bg-blue-100 text-blue-800'
+                  }`}
                 >
                   {stock}
                   <button
                     onClick={() => removeStock(stock)}
-                    className="ml-1 text-blue-600 hover:text-blue-800"
+                    className={`ml-1 transition-colors duration-300 ${
+                      isDarkMode
+                        ? 'text-blue-400 hover:text-blue-200'
+                        : 'text-blue-600 hover:text-blue-800'
+                    }`}
                   >
                     ×
                   </button>
@@ -1671,26 +2017,48 @@ const BacktestSystem = () => {
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-700">回測期間</h3>
+            <h3
+              className={`text-lg font-semibold transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-700'
+              }`}
+            >
+              回測期間
+            </h3>
             <div className="space-y-2">
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
+                <label
+                  className={`block text-sm font-medium mb-1 transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
                   開始日期
                 </label>
                 <input
                   type="date"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-300 ${
+                    isDarkMode
+                      ? 'bg-gray-700 border-gray-600 text-white'
+                      : 'bg-white border-gray-300 text-gray-900'
+                  }`}
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
+                <label
+                  className={`block text-sm font-medium mb-1 transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
                   結束日期
                 </label>
                 <input
                   type="date"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-300 ${
+                    isDarkMode
+                      ? 'bg-gray-700 border-gray-600 text-white'
+                      : 'bg-white border-gray-300 text-gray-900'
+                  }`}
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
                 />
@@ -1699,14 +2067,28 @@ const BacktestSystem = () => {
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-700">資金設定</h3>
+            <h3
+              className={`text-lg font-semibold transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-700'
+              }`}
+            >
+              資金設定
+            </h3>
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">
+              <label
+                className={`block text-sm font-medium mb-1 transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}
+              >
                 初始資金 (NT$)
               </label>
               <input
                 type="number"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
                 value={initialCapital}
                 onChange={(e) => setInitialCapital(Number(e.target.value))}
               />
@@ -1715,15 +2097,29 @@ const BacktestSystem = () => {
         </div>
 
         <div className="mb-6">
-          <h3 className="text-lg font-semibold text-gray-700 mb-4">策略參數</h3>
+          <h3
+            className={`text-lg font-semibold mb-4 transition-colors duration-300 ${
+              isDarkMode ? 'text-gray-200' : 'text-gray-700'
+            }`}
+          >
+            策略參數
+          </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label
+                className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}
+              >
                 RSI週期
               </label>
               <input
                 type="number"
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
                 value={strategyParams.rsiPeriod}
                 onChange={(e) =>
                   setStrategyParams({
@@ -1734,12 +2130,20 @@ const BacktestSystem = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label
+                className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}
+              >
                 RSI超賣
               </label>
               <input
                 type="number"
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
                 value={strategyParams.rsiOversold}
                 onChange={(e) =>
                   setStrategyParams({
@@ -1750,12 +2154,20 @@ const BacktestSystem = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label
+                className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}
+              >
                 MACD快線
               </label>
               <input
                 type="number"
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
                 value={strategyParams.macdFast}
                 onChange={(e) =>
                   setStrategyParams({
@@ -1766,12 +2178,20 @@ const BacktestSystem = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label
+                className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}
+              >
                 MACD慢線
               </label>
               <input
                 type="number"
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
                 value={strategyParams.macdSlow}
                 onChange={(e) =>
                   setStrategyParams({
@@ -1782,7 +2202,11 @@ const BacktestSystem = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label
+                className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}
+              >
                 信心度門檻
               </label>
               <input
@@ -1790,7 +2214,11 @@ const BacktestSystem = () => {
                 step="0.01"
                 min="0"
                 max="1"
-                className="w-full px-2 py-1 text-sm border border-yellow-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-yellow-50"
+                className={`w-full px-2 py-1 text-sm border border-yellow-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-yellow-900/20 border-yellow-600 text-white'
+                    : 'bg-yellow-50 border-yellow-300 text-gray-900'
+                }`}
                 value={strategyParams.confidenceThreshold}
                 onChange={(e) =>
                   setStrategyParams({
@@ -1800,18 +2228,30 @@ const BacktestSystem = () => {
                 }
                 title="設定進場所需的最低信心度 (0.0-1.0)，數值越高進場越嚴格"
               />
-              <div className="text-xs text-yellow-600 mt-1">
+              <div
+                className={`text-xs mt-1 transition-colors duration-300 ${
+                  isDarkMode ? 'text-yellow-400' : 'text-yellow-600'
+                }`}
+              >
                 {(strategyParams.confidenceThreshold * 100).toFixed(0)}%
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label
+                className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}
+              >
                 停損(%)
               </label>
               <input
                 type="number"
                 step="0.01"
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
                 value={strategyParams.stopLoss}
                 onChange={(e) =>
                   setStrategyParams({
@@ -1822,13 +2262,21 @@ const BacktestSystem = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label
+                className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}
+              >
                 停利(%)
               </label>
               <input
                 type="number"
                 step="0.01"
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
                 value={strategyParams.stopProfit}
                 onChange={(e) =>
                   setStrategyParams({
@@ -1840,11 +2288,25 @@ const BacktestSystem = () => {
             </div>
           </div>
 
-          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <h4 className="text-sm font-semibold text-blue-800 mb-2">
+          <div
+            className={`mt-4 p-3 border rounded-lg transition-colors duration-300 ${
+              isDarkMode
+                ? 'bg-blue-900/30 border-blue-700'
+                : 'bg-blue-50 border-blue-200'
+            }`}
+          >
+            <h4
+              className={`text-sm font-semibold mb-2 transition-colors duration-300 ${
+                isDarkMode ? 'text-blue-300' : 'text-blue-800'
+              }`}
+            >
               💡 信心度門檻設定指南 (已優化至70%)
             </h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-blue-700">
+            <div
+              className={`grid grid-cols-1 md:grid-cols-3 gap-3 text-xs transition-colors duration-300 ${
+                isDarkMode ? 'text-blue-200' : 'text-blue-700'
+              }`}
+            >
               <div>
                 <strong>保守型 (0.75-0.85)</strong>
                 <br />
@@ -1861,7 +2323,11 @@ const BacktestSystem = () => {
                 適度放寬條件，增加交易機會
               </div>
             </div>
-            <div className="mt-2 text-xs text-blue-600">
+            <div
+              className={`mt-2 text-xs transition-colors duration-300 ${
+                isDarkMode ? 'text-blue-300' : 'text-blue-600'
+              }`}
+            >
               <strong>目前設定：</strong>
               {strategyParams.confidenceThreshold >= 0.75
                 ? '保守型'
@@ -1876,13 +2342,21 @@ const BacktestSystem = () => {
 
           {/* 新增進階參數設定區域 */}
           <div className="mt-6">
-            <h4 className="text-md font-semibold text-gray-700 mb-4">
+            <h4
+              className={`text-md font-semibold mb-4 transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-700'
+              }`}
+            >
               🎯 進階風控參數 (策略3.2優化版)
             </h4>
 
             {/* 高優先級參數 */}
             <div className="mb-4">
-              <h5 className="text-sm font-medium text-green-700 mb-2">
+              <h5
+                className={`text-sm font-medium mb-2 transition-colors duration-300 ${
+                  isDarkMode ? 'text-green-400' : 'text-green-700'
+                }`}
+              >
                 ⭐⭐⭐ 高優先級功能
               </h5>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1899,14 +2373,22 @@ const BacktestSystem = () => {
                       }
                       className="form-checkbox h-4 w-4 text-green-600"
                     />
-                    <span className="text-xs font-medium text-gray-700">
+                    <span
+                      className={`text-xs font-medium transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
                       啟用追蹤停利
                     </span>
                   </label>
                   {strategyParams.enableTrailingStop && (
                     <div className="space-y-2">
                       <div>
-                        <label className="block text-xs text-gray-600">
+                        <label
+                          className={`block text-xs transition-colors duration-300 ${
+                            isDarkMode ? 'text-gray-400' : 'text-gray-600'
+                          }`}
+                        >
                           追蹤停利 (%)
                         </label>
                         <input
@@ -1914,7 +2396,11 @@ const BacktestSystem = () => {
                           step="0.01"
                           min="0.01"
                           max="0.2"
-                          className="w-full px-2 py-1 text-sm border border-green-300 rounded focus:ring-1 focus:ring-green-500"
+                          className={`w-full px-2 py-1 text-sm border rounded focus:ring-1 focus:ring-green-500 transition-colors duration-300 ${
+                            isDarkMode
+                              ? 'bg-gray-700 border-green-600 text-white'
+                              : 'bg-white border-green-300 text-gray-900'
+                          }`}
                           value={strategyParams.trailingStopPercent}
                           onChange={(e) =>
                             setStrategyParams({
@@ -1923,7 +2409,11 @@ const BacktestSystem = () => {
                             })
                           }
                         />
-                        <div className="text-xs text-green-600">
+                        <div
+                          className={`text-xs transition-colors duration-300 ${
+                            isDarkMode ? 'text-green-400' : 'text-green-600'
+                          }`}
+                        >
                           {(strategyParams.trailingStopPercent * 100).toFixed(
                             1,
                           )}
@@ -1931,7 +2421,11 @@ const BacktestSystem = () => {
                         </div>
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-600">
+                        <label
+                          className={`block text-xs transition-colors duration-300 ${
+                            isDarkMode ? 'text-gray-400' : 'text-gray-600'
+                          }`}
+                        >
                           啟動門檻 (%)
                         </label>
                         <input
@@ -1939,7 +2433,11 @@ const BacktestSystem = () => {
                           step="0.01"
                           min="0.01"
                           max="0.1"
-                          className="w-full px-2 py-1 text-sm border border-green-300 rounded focus:ring-1 focus:ring-green-500"
+                          className={`w-full px-2 py-1 text-sm border rounded focus:ring-1 focus:ring-green-500 transition-colors duration-300 ${
+                            isDarkMode
+                              ? 'bg-gray-700 border-green-600 text-white'
+                              : 'bg-white border-green-300 text-gray-900'
+                          }`}
                           value={strategyParams.trailingActivatePercent}
                           onChange={(e) =>
                             setStrategyParams({
@@ -1948,7 +2446,11 @@ const BacktestSystem = () => {
                             })
                           }
                         />
-                        <div className="text-xs text-green-600">
+                        <div
+                          className={`text-xs transition-colors duration-300 ${
+                            isDarkMode ? 'text-green-400' : 'text-green-600'
+                          }`}
+                        >
                           獲利
                           {(
                             strategyParams.trailingActivatePercent * 100
@@ -1960,7 +2462,11 @@ const BacktestSystem = () => {
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                  <label
+                    className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                      isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                    }`}
+                  >
                     成交量門檻 (倍)
                   </label>
                   <input
@@ -1968,7 +2474,11 @@ const BacktestSystem = () => {
                     step="0.1"
                     min="1.0"
                     max="3.0"
-                    className="w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 bg-orange-50"
+                    className={`w-full px-2 py-1 text-sm border rounded focus:ring-1 focus:ring-orange-500 transition-colors duration-300 ${
+                      isDarkMode
+                        ? 'bg-orange-900/20 border-orange-600 text-white'
+                        : 'bg-orange-50 border-orange-300 text-gray-900'
+                    }`}
                     value={strategyParams.volumeThreshold}
                     onChange={(e) =>
                       setStrategyParams({
@@ -1977,7 +2487,11 @@ const BacktestSystem = () => {
                       })
                     }
                   />
-                  <div className="text-xs text-orange-600 mt-1">
+                  <div
+                    className={`text-xs mt-1 transition-colors duration-300 ${
+                      isDarkMode ? 'text-orange-400' : 'text-orange-600'
+                    }`}
+                  >
                     {strategyParams.volumeThreshold.toFixed(1)}倍平均量
                   </div>
                 </div>
@@ -2248,7 +2762,9 @@ const BacktestSystem = () => {
                     step="5"
                     min="50"
                     max="90"
-                    className="w-full px-2 py-1 text-sm border border-purple-300 rounded focus:ring-1 focus:ring-purple-500"
+                    className={`w-full px-2 py-1 text-sm border border-purple-300 rounded focus:ring-1 focus:ring-purple-500 ${
+                      isDarkMode ? '  text-gray-600' : '  text-gray-900'
+                    }`}
                     value={strategyParams.maxTotalExposure * 100}
                     onChange={(e) =>
                       setStrategyParams({
@@ -2281,7 +2797,12 @@ const BacktestSystem = () => {
             <h4 className="text-sm font-semibold text-gray-800 mb-2">
               🚀 策略3.2優化功能說明 (已設定最佳參數)
             </h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-gray-700 mb-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs text-gray-700 mb-3">
+              <div>
+                <strong>T+1真實交易邏輯</strong>
+                <br />
+                T日收盤後產生信號，T+1日開盤價執行
+              </div>
               <div>
                 <strong>追蹤停利機制</strong>
                 <br />
@@ -2298,9 +2819,19 @@ const BacktestSystem = () => {
                 5天保護期，避免剛進場就被洗出
               </div>
             </div>
+            <div className="p-2 bg-blue-50 border border-blue-200 rounded text-xs mb-2">
+              <strong className="text-blue-800">🔄 新增T+1交易邏輯：</strong>
+              <span className="text-blue-700">
+                更貼近實際交易情況，T日技術分析→T+1日開盤執行→避免未來函數問題
+              </span>
+            </div>
             <div className="p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
-              <strong>📈 Python最佳化參數已套用：</strong>
-              RSI門檻35 | 成交量1.5倍 | 信心度70% | 價格動能3% | 持有保護5天
+              <strong
+                className={`${isDarkMode ? 'text-gray-600' : 'text-gray-900'}`}
+              >
+                📈 Python最佳化參數已套用：RSI門檻35 | 成交量1.5倍 | 信心度70% |
+                價格動能3% | 持有保護5天
+              </strong>
             </div>
           </div>
         </div>
@@ -2318,97 +2849,293 @@ const BacktestSystem = () => {
 
       {results && (
         <div className="space-y-6">
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold mb-6 text-gray-800">
+          <div
+            className={`rounded-lg shadow-lg p-6 transition-colors duration-300 ${
+              isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+            }`}
+          >
+            <h2
+              className={`text-2xl font-bold mb-6 transition-colors duration-300 ${
+                isDarkMode ? 'text-white' : 'text-gray-800'
+              }`}
+            >
               回測結果摘要
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
+              <div
+                className={`text-center p-4 rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-blue-900/30 border border-blue-700'
+                    : 'bg-blue-50'
+                }`}
+              >
                 <div className="text-2xl font-bold text-blue-600">
                   {formatCurrency(results.performance.finalCapital)}
                 </div>
-                <div className="text-sm text-gray-600">最終資金</div>
+                <div
+                  className={`text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  最終資金
+                </div>
               </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
+              <div
+                className={`text-center p-4 rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-green-900/30 border border-green-700'
+                    : 'bg-green-50'
+                }`}
+              >
                 <div className="text-2xl font-bold text-green-600">
                   {formatPercent(results.performance.totalReturn)}
                 </div>
-                <div className="text-sm text-gray-600">總報酬率</div>
+                <div
+                  className={`text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  總報酬率
+                </div>
               </div>
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
+              <div
+                className={`text-center p-4 rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-purple-900/30 border border-purple-700'
+                    : 'bg-purple-50'
+                }`}
+              >
                 <div className="text-2xl font-bold text-purple-600">
                   {formatPercent(results.performance.annualReturn)}
                 </div>
-                <div className="text-sm text-gray-600">年化報酬</div>
+                <div
+                  className={`text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  年化報酬
+                </div>
               </div>
-              <div className="text-center p-4 bg-orange-50 rounded-lg">
+              <div
+                className={`text-center p-4 rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-orange-900/30 border border-orange-700'
+                    : 'bg-orange-50'
+                }`}
+              >
                 <div className="text-2xl font-bold text-orange-600">
                   {formatPercent(results.trades.winRate)}
                 </div>
-                <div className="text-sm text-gray-600">勝率</div>
+                <div
+                  className={`text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  勝率
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h3 className="text-xl font-bold mb-4 text-gray-800">交易統計</h3>
+          <div
+            className={`rounded-lg shadow-lg p-6 transition-colors duration-300 ${
+              isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+            }`}
+          >
+            <h3
+              className={`text-xl font-bold mb-4 transition-colors duration-300 ${
+                isDarkMode ? 'text-white' : 'text-gray-800'
+              }`}
+            >
+              交易統計
+            </h3>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              <div className="p-3 border rounded-lg">
-                <div className="text-lg font-semibold">
+              <div
+                className={`p-3 border rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'border-gray-600 bg-gray-700/50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <div
+                  className={`text-lg font-semibold transition-colors duration-300 ${
+                    isDarkMode ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
                   {results.trades.totalTrades}
                 </div>
-                <div className="text-sm text-gray-600">總交易次數</div>
+                <div
+                  className={`text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  總交易次數
+                </div>
               </div>
-              <div className="p-3 border rounded-lg">
+              <div
+                className={`p-3 border rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'border-gray-600 bg-gray-700/50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
                 <div className="text-lg font-semibold text-green-600">
                   {results.trades.winningTrades}
                 </div>
-                <div className="text-sm text-gray-600">獲利交易</div>
+                <div
+                  className={`text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  獲利交易
+                </div>
               </div>
-              <div className="p-3 border rounded-lg">
+              <div
+                className={`p-3 border rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'border-gray-600 bg-gray-700/50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
                 <div className="text-lg font-semibold text-red-600">
                   {results.trades.losingTrades}
                 </div>
-                <div className="text-sm text-gray-600">虧損交易</div>
+                <div
+                  className={`text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  虧損交易
+                </div>
               </div>
-              <div className="p-3 border rounded-lg">
-                <div className="text-lg font-semibold">
+              <div
+                className={`p-3 border rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'border-gray-600 bg-gray-700/50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <div
+                  className={`text-lg font-semibold transition-colors duration-300 ${
+                    isDarkMode ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
                   {formatPercent(results.trades.avgWin)}
                 </div>
-                <div className="text-sm text-gray-600">平均獲利</div>
+                <div
+                  className={`text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  平均獲利
+                </div>
               </div>
-              <div className="p-3 border rounded-lg">
-                <div className="text-lg font-semibold">
+              <div
+                className={`p-3 border rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'border-gray-600 bg-gray-700/50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <div
+                  className={`text-lg font-semibold transition-colors duration-300 ${
+                    isDarkMode ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
                   {formatPercent(results.trades.avgLoss)}
                 </div>
-                <div className="text-sm text-gray-600">平均虧損</div>
+                <div
+                  className={`text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  平均虧損
+                </div>
               </div>
-              <div className="p-3 border rounded-lg">
-                <div className="text-lg font-semibold">
+              <div
+                className={`p-3 border rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'border-gray-600 bg-gray-700/50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <div
+                  className={`text-lg font-semibold transition-colors duration-300 ${
+                    isDarkMode ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
                   {formatPercent(results.trades.maxWin)}
                 </div>
-                <div className="text-sm text-gray-600">最大獲利</div>
+                <div
+                  className={`text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  最大獲利
+                </div>
               </div>
-              <div className="p-3 border rounded-lg">
-                <div className="text-lg font-semibold">
+              <div
+                className={`p-3 border rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'border-gray-600 bg-gray-700/50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <div
+                  className={`text-lg font-semibold transition-colors duration-300 ${
+                    isDarkMode ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
                   {formatPercent(results.trades.maxLoss)}
                 </div>
-                <div className="text-sm text-gray-600">最大虧損</div>
+                <div
+                  className={`text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  最大虧損
+                </div>
               </div>
-              <div className="p-3 border rounded-lg">
-                <div className="text-lg font-semibold">
+              <div
+                className={`p-3 border rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'border-gray-600 bg-gray-700/50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <div
+                  className={`text-lg font-semibold transition-colors duration-300 ${
+                    isDarkMode ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
                   {results.trades.avgHoldingDays.toFixed(1)}天
                 </div>
-                <div className="text-sm text-gray-600">平均持股天數</div>
+                <div
+                  className={`text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  平均持股天數
+                </div>
               </div>
-              <div className="p-3 border rounded-lg bg-gradient-to-r from-blue-50 to-purple-50">
+              <div
+                className={`p-3 border rounded-lg transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-gradient-to-r from-blue-900/30 to-purple-900/30 border-blue-700'
+                    : 'bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200'
+                }`}
+              >
                 <div className="text-lg font-semibold text-blue-600">
                   {results.trades.profitFactor >= 999
                     ? '∞'
                     : results.trades.profitFactor.toFixed(2)}
                 </div>
                 <div className="text-sm text-blue-600">獲利因子</div>
-                <div className="text-xs text-gray-500 mt-1">
+                <div
+                  className={`text-xs mt-1 transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                  }`}
+                >
                   {results.trades.profitFactor >= 2.0
                     ? '優秀'
                     : results.trades.profitFactor >= 1.5
@@ -2422,8 +3149,18 @@ const BacktestSystem = () => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <h3 className="text-xl font-bold mb-4 text-gray-800">資金曲線</h3>
+            <div
+              className={`rounded-lg shadow-lg p-6 transition-colors duration-300 ${
+                isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+              }`}
+            >
+              <h3
+                className={`text-xl font-bold mb-4 transition-colors duration-300 ${
+                  isDarkMode ? 'text-white' : 'text-gray-800'
+                }`}
+              >
+                資金曲線
+              </h3>
               <div className="w-full h-80">
                 <LineChart
                   width={500}
@@ -2481,8 +3218,18 @@ const BacktestSystem = () => {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <h3 className="text-xl font-bold mb-4 text-gray-800">個股表現</h3>
+            <div
+              className={`rounded-lg shadow-lg p-6 transition-colors duration-300 ${
+                isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+              }`}
+            >
+              <h3
+                className={`text-xl font-bold mb-4 transition-colors duration-300 ${
+                  isDarkMode ? 'text-white' : 'text-gray-800'
+                }`}
+              >
+                個股表現
+              </h3>
               <div className="w-full h-80">
                 <BarChart
                   width={500}
@@ -2513,8 +3260,16 @@ const BacktestSystem = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h3 className="text-xl font-bold mb-4 text-gray-800">
+          <div
+            className={`rounded-lg shadow-lg p-6 transition-colors duration-300 ${
+              isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+            }`}
+          >
+            <h3
+              className={`text-xl font-bold mb-4 transition-colors duration-300 ${
+                isDarkMode ? 'text-white' : 'text-gray-800'
+              }`}
+            >
               交易結果分布
             </h3>
             <div className="flex justify-center">
@@ -2557,48 +3312,187 @@ const BacktestSystem = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h3 className="text-xl font-bold mb-4 text-gray-800">
+          <div
+            className={`rounded-lg shadow-lg p-6 transition-colors duration-300 ${
+              isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+            }`}
+          >
+            <h3
+              className={`text-xl font-bold mb-4 transition-colors duration-300 ${
+                isDarkMode ? 'text-white' : 'text-gray-800'
+              }`}
+            >
               詳細交易記錄
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50">
-                    <th className="px-4 py-2 text-left">股票</th>
-                    <th className="px-4 py-2 text-left">進場日期</th>
-                    <th className="px-4 py-2 text-left">出場日期</th>
-                    <th className="px-4 py-2 text-right">進場價</th>
-                    <th className="px-4 py-2 text-right">出場價</th>
-                    <th className="px-4 py-2 text-center">持有天數</th>
-                    <th className="px-4 py-2 text-center">信心度</th>
-                    <th className="px-4 py-2 text-right">獲利率</th>
-                    <th className="px-4 py-2 text-right">獲利金額</th>
-                    <th className="px-4 py-2 text-left">出場原因</th>
+                  <tr
+                    className={`transition-colors duration-300 ${
+                      isDarkMode ? 'bg-gray-700' : 'bg-gray-50'
+                    }`}
+                  >
+                    <th
+                      className={`px-4 py-2 text-left transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}
+                    >
+                      股票
+                    </th>
+                    <th
+                      className={`px-4 py-2 text-left transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}
+                    >
+                      訊號-買
+                    </th>
+                    <th
+                      className={`px-4 py-2 text-left transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}
+                    >
+                      購買日期
+                    </th>
+                    <th
+                      className={`px-4 py-2 text-left transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}
+                    >
+                      訊號-賣
+                    </th>
+                    <th
+                      className={`px-4 py-2 text-left transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}
+                    >
+                      賣出日期
+                    </th>
+                    <th
+                      className={`px-4 py-2 text-right transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}
+                    >
+                      進場價
+                    </th>
+                    <th
+                      className={`px-4 py-2 text-right transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}
+                    >
+                      出場價
+                    </th>
+                    <th
+                      className={`px-4 py-2 text-center transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}
+                    >
+                      持有天數
+                    </th>
+                    <th
+                      className={`px-4 py-2 text-center transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}
+                    >
+                      信心度
+                    </th>
+                    <th
+                      className={`px-4 py-2 text-right transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}
+                    >
+                      獲利率
+                    </th>
+                    <th
+                      className={`px-4 py-2 text-right transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}
+                    >
+                      獲利金額
+                    </th>
+                    <th
+                      className={`px-4 py-2 text-left transition-colors duration-300 ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}
+                    >
+                      出場原因
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {results.detailedTrades.slice(-20).map((trade, index) => (
                     <tr
                       key={index}
-                      className={`border-b ${
-                        (trade.profit || 0) > 0 ? 'bg-green-50' : 'bg-red-50'
+                      className={`border-b transition-colors duration-300 ${
+                        (trade.profit || 0) > 0
+                          ? isDarkMode
+                            ? 'bg-green-900/20 border-green-800'
+                            : 'bg-green-50 border-green-200'
+                          : isDarkMode
+                          ? 'bg-red-900/20 border-red-800'
+                          : 'bg-red-50 border-red-200'
                       }`}
                     >
-                      <td className="px-4 py-2 font-medium">{trade.stock}</td>
-                      <td className="px-4 py-2">
-                        {trade.entryDate?.toLocaleDateString()}
+                      <td
+                        className={`px-4 py-2 font-medium transition-colors duration-300 ${
+                          isDarkMode ? 'text-white' : 'text-gray-900'
+                        }`}
+                      >
+                        {trade.stock}
                       </td>
-                      <td className="px-4 py-2">
-                        {trade.date.toLocaleDateString()}
+                      <td
+                        className={`px-4 py-2 transition-colors duration-300 ${
+                          isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
+                        {trade.buySignalDate?.toLocaleDateString() || '-'}
                       </td>
-                      <td className="px-4 py-2 text-right">
+                      <td
+                        className={`px-4 py-2 transition-colors duration-300 ${
+                          isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
+                        {trade.actualBuyDate?.toLocaleDateString() ||
+                          trade.entryDate?.toLocaleDateString() ||
+                          '-'}
+                      </td>
+                      <td
+                        className={`px-4 py-2 transition-colors duration-300 ${
+                          isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
+                        {trade.action === 'SELL'
+                          ? trade.sellSignalDate?.toLocaleDateString() || '-'
+                          : '-'}
+                      </td>
+                      <td
+                        className={`px-4 py-2 transition-colors duration-300 ${
+                          isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
+                        {trade.action === 'SELL'
+                          ? trade.actualSellDate?.toLocaleDateString() ||
+                            trade.date.toLocaleDateString()
+                          : '-'}
+                      </td>
+                      <td
+                        className={`px-4 py-2 text-right transition-colors duration-300 ${
+                          isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
                         {trade.entryPrice?.toFixed(2)}
                       </td>
-                      <td className="px-4 py-2 text-right">
+                      <td
+                        className={`px-4 py-2 text-right transition-colors duration-300 ${
+                          isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
                         {trade.price.toFixed(2)}
                       </td>
-                      <td className="px-4 py-2 text-center">
+                      <td
+                        className={`px-4 py-2 text-center transition-colors duration-300 ${
+                          isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
                         {trade.holdingDays}
                       </td>
                       <td className="px-4 py-2 text-center">
@@ -2634,29 +3528,55 @@ const BacktestSystem = () => {
                       >
                         {formatCurrency(trade.profit || 0)}
                       </td>
-                      <td className="px-4 py-2 text-xs">{trade.reason}</td>
+                      <td
+                        className={`px-4 py-2 text-xs transition-colors duration-300 ${
+                          isDarkMode ? 'text-gray-400' : 'text-gray-600'
+                        }`}
+                      >
+                        {trade.reason}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             {results.detailedTrades.length > 20 && (
-              <div className="mt-4 text-center text-gray-500">
+              <div
+                className={`mt-4 text-center transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                }`}
+              >
                 顯示最近20筆交易，共{results.detailedTrades.length}筆
               </div>
             )}
           </div>
 
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h3 className="text-xl font-bold mb-4 text-gray-800">
+          <div
+            className={`rounded-lg shadow-lg p-6 transition-colors duration-300 ${
+              isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+            }`}
+          >
+            <h3
+              className={`text-xl font-bold mb-4 transition-colors duration-300 ${
+                isDarkMode ? 'text-white' : 'text-gray-800'
+              }`}
+            >
               策略分析建議
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <h4 className="font-semibold text-green-600 mb-2">
+                <h4
+                  className={`font-semibold mb-2 transition-colors duration-300 ${
+                    isDarkMode ? 'text-green-400' : 'text-green-600'
+                  }`}
+                >
                   ✅ 策略優勢
                 </h4>
-                <ul className="space-y-1 text-sm text-gray-700">
+                <ul
+                  className={`space-y-1 text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                  }`}
+                >
                   <li>
                     • 勝率: {formatPercent(results.trades.winRate)}{' '}
                     {results.trades.winRate > 0.7
@@ -2682,10 +3602,18 @@ const BacktestSystem = () => {
                 </ul>
               </div>
               <div>
-                <h4 className="font-semibold text-orange-600 mb-2">
+                <h4
+                  className={`font-semibold mb-2 transition-colors duration-300 ${
+                    isDarkMode ? 'text-orange-400' : 'text-orange-600'
+                  }`}
+                >
                   ⚠️ 改進建議
                 </h4>
-                <ul className="space-y-1 text-sm text-gray-700">
+                <ul
+                  className={`space-y-1 text-sm transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                  }`}
+                >
                   {results.trades.winRate < 0.6 && (
                     <li>• 考慮提高進場門檻以提升勝率</li>
                   )}
@@ -2705,11 +3633,31 @@ const BacktestSystem = () => {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-lg p-6 mt-6">
-        <h3 className="text-xl font-bold mb-4 text-gray-800">使用說明</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-gray-700">
+      <div
+        className={`rounded-lg shadow-lg p-6 mt-6 transition-colors duration-300 ${
+          isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+        }`}
+      >
+        <h3
+          className={`text-xl font-bold mb-4 transition-colors duration-300 ${
+            isDarkMode ? 'text-white' : 'text-gray-800'
+          }`}
+        >
+          使用說明
+        </h3>
+        <div
+          className={`grid grid-cols-1 md:grid-cols-2 gap-6 text-sm transition-colors duration-300 ${
+            isDarkMode ? 'text-gray-300' : 'text-gray-700'
+          }`}
+        >
           <div>
-            <h4 className="font-semibold mb-2">📈 策略邏輯</h4>
+            <h4
+              className={`font-semibold mb-2 transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-800'
+              }`}
+            >
+              📈 策略邏輯
+            </h4>
             <ul className="space-y-1">
               <li>
                 • <strong>進場條件</strong>: RSI超賣回升 + MACD黃金交叉 +
@@ -2730,7 +3678,13 @@ const BacktestSystem = () => {
             </ul>
           </div>
           <div>
-            <h4 className="font-semibold mb-2">🔧 參數調整</h4>
+            <h4
+              className={`font-semibold mb-2 transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-800'
+              }`}
+            >
+              🔧 參數調整
+            </h4>
             <ul className="space-y-1">
               <li>
                 • <strong>RSI週期</strong>: 建議10-21，預設14
@@ -2747,8 +3701,18 @@ const BacktestSystem = () => {
             </ul>
           </div>
         </div>
-        <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <p className="text-sm text-yellow-800">
+        <div
+          className={`mt-4 p-4 border rounded-lg transition-colors duration-300 ${
+            isDarkMode
+              ? 'bg-yellow-900/20 border-yellow-600'
+              : 'bg-yellow-50 border-yellow-200'
+          }`}
+        >
+          <p
+            className={`text-sm transition-colors duration-300 ${
+              isDarkMode ? 'text-yellow-300' : 'text-yellow-800'
+            }`}
+          >
             <strong>📊 數據來源說明</strong>: 本系統優先使用Yahoo Finance
             API獲取真實台股歷史數據。
             如API無法連接，將自動降級使用增強型模擬數據（基於真實股價特性設計）。
