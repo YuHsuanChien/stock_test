@@ -187,7 +187,7 @@ export const fetchFubonData = async (
     return data;
   } catch (err) {
     console.error('從富邦取得資料失敗:', err);
-    alert('從富邦取得資料失敗，請稍後再試。');
+    alert(`從富邦取得資料失敗，股票: ${symbol} 請稍後再試。`);
     return [];
   }
 };
