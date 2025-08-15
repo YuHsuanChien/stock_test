@@ -219,15 +219,6 @@ export const fetchAllStocksList = async (): Promise<string[]> => {
       }
     }
 
-    // 可選：過濾掉一些特殊股票（如優先股、ETF等）
-    // 如果你想要只取一般股票，可以取消註解以下代碼
-    // stocks = stocks.filter(symbol => {
-    //   // 排除優先股 (以B結尾)、ETF、權證等
-    //   return !symbol.endsWith('B') &&
-    //          !symbol.startsWith('00') &&
-    //          symbol.length === 4 &&
-    //          /^\d+$/.test(symbol);
-    // });
 
     console.log(
       `✅ 成功獲取 ${stocks.length} 支股票:`,
