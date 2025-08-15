@@ -2,6 +2,96 @@ import { StockData } from '../interfaces/stockData';
 import { RawStockData } from '../interfaces/stockData';
 
 /**
+ * 股票清單項目的介面定義
+ */
+interface StockListItem {
+  symbol: string;
+}
+
+/**
+ * 獲取所有股票清單
+ * @returns 股票代號陣列
+ */
+export const fetchAllStocksList = async (): Promise<string[]> => {
+  console.log('🔍 正在獲取所有股票清單...');
+  try {
+    const res = await fetch(
+      'http://localhost:3100/api/historical-candles/stockList',
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+
+    const result = await res.json();
+
+    // 處理物件陣列格式：[{ "symbol": "1101" }, { "symbol": "1101B" }, ...]
+    let stocks: string[] = [];
+
+    if (Array.isArray(result)) {
+      // 如果是陣列，檢查元素格式
+      if (
+        result.length > 0 &&
+        typeof result[0] === 'object' &&
+        result[0].symbol
+      ) {
+        // 物件陣列格式：[{ "symbol": "1101" }, ...]
+        stocks = (result as StockListItem[])
+          .map((item) => item.symbol)
+          .filter((symbol) => symbol && symbol.trim().length > 0);
+      } else if (result.length > 0 && typeof result[0] === 'string') {
+        // 字串陣列格式：["1101", "1102", ...]
+        stocks = (result as string[]).filter(
+          (symbol) => symbol && symbol.trim().length > 0,
+        );
+      }
+    } else if (result.stocks && Array.isArray(result.stocks)) {
+      // 物件包裝格式：{ stocks: [...] }
+      if (
+        result.stocks.length > 0 &&
+        typeof result.stocks[0] === 'object' &&
+        result.stocks[0].symbol
+      ) {
+        stocks = (result.stocks as StockListItem[])
+          .map((item) => item.symbol)
+          .filter((symbol) => symbol && symbol.trim().length > 0);
+      } else {
+        stocks = (result.stocks as string[]).filter(
+          (symbol) => symbol && symbol.trim().length > 0,
+        );
+      }
+    }
+
+    // 可選：過濾掉一些特殊股票（如優先股、ETF等）
+    // 如果你想要只取一般股票，可以取消註解以下代碼
+    // stocks = stocks.filter(symbol => {
+    //   // 排除優先股 (以B結尾)、ETF、權證等
+    //   return !symbol.endsWith('B') &&
+    //          !symbol.startsWith('00') &&
+    //          symbol.length === 4 &&
+    //          /^\d+$/.test(symbol);
+    // });
+
+    console.log(
+      `✅ 成功獲取 ${stocks.length} 支股票:`,
+      stocks.slice(0, 10),
+      stocks.length > 10 ? '...' : '',
+    );
+    return stocks;
+  } catch (err) {
+    console.error('獲取股票清單失敗:', err);
+    alert('獲取股票清單失敗，請檢查後端服務');
+    return [];
+  }
+};
+
+/**
  * 動態檢查是否為交易日（基於實際數據）
  * @param date - 要檢查的日期
  * @param stockDataMap - 股票數據映射，用於檢查是否有數據
@@ -152,7 +242,6 @@ export const parseYahooChartData = (
   }
 };
 
-
 /**
  * 從nest.js後端向富邦取得資料
  * @param symbol - 股票代號
@@ -168,7 +257,7 @@ export const fetchFubonData = async (
   console.log('🔍 從富邦取得資料:', symbol);
   try {
     const res = await fetch(
-      `http://localhost:3100/api/historical-candles/${symbol}`,
+      `http://localhost:3100/api/historical-candles/duration/${symbol}`,
       {
         method: 'POST',
         headers: {
@@ -178,11 +267,40 @@ export const fetchFubonData = async (
       },
     );
 
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+
     const result = await res.json();
-    const data = result.map((item: RawStockData) => ({
-      ...item,
-      date: new Date(item.date),
-    }));
+
+    // 處理富邦API返回的資料，將欄位映射為StockData格式
+    const data = result
+      .map((item: RawStockData) => {
+        try {
+          // 驗證日期
+          const tradeDate = new Date(item.tradeDate);
+          if (isNaN(tradeDate.getTime())) {
+            console.warn('富邦API返回無效日期:', item.tradeDate);
+            return null;
+          }
+
+          // 映射欄位並驗證數據
+          return {
+            symbol: symbol, // 加入股票代號
+            date: tradeDate, // 將 tradeDate 映射為 date
+            open: Number(item.open) || 0,
+            high: Number(item.high) || 0,
+            low: Number(item.low) || 0,
+            close: Number(item.close) || 0,
+            volume: Number(item.volume) || 0,
+          } as StockData;
+        } catch (error) {
+          console.warn('處理富邦數據項目時出錯:', item, error);
+          return null;
+        }
+      })
+      .filter((item: StockData | null): item is StockData => item !== null); // 過濾掉無效項目
+
     console.log('從富邦取得資料:', data);
     return data;
   } catch (err) {

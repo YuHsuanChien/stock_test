@@ -30,11 +30,11 @@ export interface StockData {
  * 富邦證券API返回的原始股票數據格式
  */
 export interface RawStockData {
-  date: string; // API 返回的是字串格式的日期
+  stockId: number; // 股票ID
+  tradeDate: string; // API 返回的日期字串
   open: number;
   high: number;
   low: number;
   close: number;
   volume: number;
-  // 根據你的 API 實際返回的欄位添加其他屬性
 }
