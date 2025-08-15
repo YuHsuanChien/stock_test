@@ -8,6 +8,157 @@ interface StockListItem {
   symbol: string;
 }
 
+// 導入策略參數介面
+interface StrategyParams {
+  rsiPeriod: number;
+  rsiOversold: number;
+  macdFast: number;
+  macdSlow: number;
+  macdSignal: number;
+  volumeThreshold: number;
+  maxPositionSize: number;
+  stopLoss: number;
+  stopProfit: number;
+  confidenceThreshold: number;
+  enableTrailingStop: boolean;
+  trailingStopPercent: number;
+  trailingActivatePercent: number;
+  enableATRStop: boolean;
+  atrPeriod: number;
+  atrMultiplier: number;
+  minHoldingDays: number;
+  enablePriceMomentum: boolean;
+  priceMomentumPeriod: number;
+  priceMomentumThreshold: number;
+  enableMA60: boolean;
+  maxTotalExposure: number;
+  usePythonLogic: boolean;
+  hierarchicalDecision: boolean;
+  dynamicPositionSize: boolean;
+}
+
+/**
+ * 回測請求介面
+ */
+interface BacktestRequest {
+  stocks: string[];
+  startDate: string;
+  endDate: string;
+  initialCapital: number;
+  strategyParams?: StrategyParams;
+}
+
+// 回測結果介面 - 與前端保持一致
+interface BacktestResults {
+  performance: {
+    initialCapital: number;
+    finalCapital: number;
+    totalReturn: number;
+    annualReturn: number;
+    totalProfit: number;
+    maxDrawdown: number;
+  };
+  trades: {
+    totalTrades: number;
+    winningTrades: number;
+    losingTrades: number;
+    winRate: number;
+    avgWin: number;
+    avgLoss: number;
+    maxWin: number;
+    maxLoss: number;
+    avgHoldingDays: number;
+    profitFactor: number;
+  };
+  detailedTrades: Array<{
+    stock: string;
+    action: string;
+    date: Date;
+    price: number;
+    quantity: number;
+    amount: number;
+    buySignalDate?: Date;
+    sellSignalDate?: Date;
+    actualBuyDate?: Date;
+    actualSellDate?: Date;
+    entryPrice?: number;
+    entryDate?: Date;
+    holdingDays?: number;
+    profit?: number;
+    profitRate?: number;
+    reason: string;
+    confidence?: number;
+  }>;
+  equityCurve: Array<{
+    date: string;
+    value: number;
+    cash: number;
+    positions: number;
+  }>;
+  stockPerformance: Array<{
+    stock: string;
+    trades: number;
+    winRate: number;
+    totalProfit: number;
+  }>;
+}
+
+/**
+ * 回測結果介面
+ */
+interface BacktestResponse {
+  statusCode: number;
+  message: string;
+  data: BacktestResults;
+}
+
+/**
+ * 執行後端回測
+ */
+export const runBacktestOnServer = async (
+  stocks: string[],
+  startDate: string,
+  endDate: string,
+  initialCapital: number,
+  strategyParams?: StrategyParams,
+): Promise<BacktestResults> => {
+  console.log('🔥 開始執行後端回測...');
+
+  try {
+    const requestBody: BacktestRequest = {
+      stocks,
+      startDate,
+      endDate,
+      initialCapital,
+      strategyParams,
+    };
+
+    const response = await fetch('http://localhost:3100/api/backtest/run', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result: BacktestResponse = await response.json();
+
+    if (result.statusCode === 200) {
+      console.log('✅ 後端回測執行成功');
+      return result.data;
+    } else {
+      throw new Error(result.message || '回測執行失敗');
+    }
+  } catch (error) {
+    console.error('❌ 後端回測失敗:', error);
+    throw error;
+  }
+};
+
 /**
  * 獲取所有股票清單
  * @returns 股票代號陣列

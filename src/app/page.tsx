@@ -1,5 +1,25 @@
 'use client';
 
+/**
+ * 安全的日期格式化工具
+ * 用途：安全地將日期字符串或Date對象格式化為本地日期字符串
+ * 處理後端返回的字符串日期和前端的Date對象
+ */
+const formatDate = (date: string | Date | null | undefined): string => {
+  if (!date) return '-';
+  try {
+    if (typeof date === 'string') {
+      return new Date(date).toLocaleDateString();
+    } else if (date instanceof Date) {
+      return date.toLocaleDateString();
+    }
+    return '-';
+  } catch (error) {
+    console.warn('日期格式化錯誤:', error);
+    return '-';
+  }
+};
+
 import React, { useState } from 'react';
 import {
   LineChart,
@@ -21,6 +41,7 @@ import {
   fetchAllStocksList,
   isTradingDay,
   findNextTradingDay,
+  runBacktestOnServer,
 } from './services/stock_api';
 
 // 型別定義
@@ -94,6 +115,7 @@ interface BacktestResults {
     totalReturn: number;
     annualReturn: number;
     totalProfit: number;
+    maxDrawdown: number;
   };
   trades: {
     totalTrades: number;
@@ -168,9 +190,10 @@ interface SellSignalResult {
 const BacktestSystem = () => {
   // 暗亮模式狀態
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  // 回測模式狀態：true為後端回測，false為前端回測
+  const [useBackendBacktest, setUseBackendBacktest] = useState<boolean>(true);
 
   const [stocks, setStocks] = useState<string[]>(['2330', '2454', '2317']);
-  const [allStocks, setAllStocks] = useState<string[]>([]);
   const [startDate, setStartDate] = useState<string>('2020-01-01');
   const [endDate, setEndDate] = useState<string>('2025-08-05');
   const [initialCapital, setInitialCapital] = useState<number>(1000000);
@@ -237,11 +260,6 @@ const BacktestSystem = () => {
     hierarchicalDecision: true, // 階層決策模式
     dynamicPositionSize: true, // 動態倉位調整
   });
-
-  /**
-   * 真實台股數據獲取器(資料庫版)
-   */
-  const fetchDataStockData = async () => {};
 
   /**
    * 真實台股數據獲取器 (更新版)
@@ -1227,6 +1245,24 @@ const BacktestSystem = () => {
     setLoading(true);
 
     try {
+      if (useBackendBacktest) {
+        // 使用後端回測
+        console.log('🚀 使用後端回測模式');
+        const result = await runBacktestOnServer(
+          stocks,
+          startDate,
+          endDate,
+          initialCapital,
+          strategyParams,
+        );
+        setResults(result);
+        console.log(result)
+        console.log('✅ 後端回測完成');
+        return;
+      }
+
+      // 原有的前端回測邏輯
+      console.log('🚀 使用前端回測模式');
       let currentCapital = initialCapital;
       const trades: TradeResult[] = [];
       const positions: Record<string, Position> = {};
@@ -1699,6 +1735,7 @@ const BacktestSystem = () => {
           totalReturn,
           annualReturn,
           totalProfit: finalValue - initialCapital,
+          maxDrawdown: 0.05, // 暫時設定為5%，在完整實現時會計算真實值
         },
         trades: {
           totalTrades: completedTrades.length,
@@ -1771,6 +1808,7 @@ const BacktestSystem = () => {
       };
 
       console.log(`🎉 回測完成！共執行 ${completedTrades.length} 筆交易`);
+      console.log('resultsData', resultsData);
       setResults(resultsData);
     } catch (error: unknown) {
       console.error('❌ 回測執行錯誤:', error);
@@ -1780,6 +1818,135 @@ const BacktestSystem = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  /**
+   * 前端全部回測功能
+   *
+   * 功能：
+   * - 從DB獲取所有股票清單
+   * - 使用前端邏輯執行完整的回測
+   * - 彙總所有結果
+   */
+  const runFrontendFullBacktest = async () => {
+    // 1. 獲取所有股票清單
+    const allStockList = await fetchAllStocksList();
+    if (allStockList.length === 0) {
+      alert('無法獲取股票清單或股票清單為空');
+      return;
+    }
+
+    console.log(`📊 準備回測 ${allStockList.length} 支股票...`);
+
+    // 2. 暫時備份當前的股票清單
+    const originalStocks = [...stocks];
+
+    // 3. 設定所有股票到股票清單（這樣界面會顯示所有股票）
+    setStocks(allStockList);
+
+    // 4. 初始化回測變數
+    const currentCapital = initialCapital; // 簡化版本：使用 const
+    const trades: TradeResult[] = []; // 簡化版本：空交易數組
+    // positions 和 pendingSellOrders 在完整實現時會需要，目前先註釋
+    // const positions: Record<string, Position> = {};
+    // const pendingSellOrders: Record<string, { reason: string; signalDate: Date; targetExecutionDate: Date | null; position: Position; }> = {};
+    const equityCurve: {
+      date: string;
+      value: number;
+      cash: number;
+      positions: number;
+    }[] = [];
+
+    console.log('🚀 開始獲取真實股票數據...');
+    console.log('💡 請打開瀏覽器的開發者工具 Network 頁籤來查看 API 請求！');
+
+    const allStockData: Record<string, StockData[]> = {};
+    for (const stock of allStockList) {
+      console.log(`📈 正在處理 ${stock}...`);
+      try {
+        const result = await fetchRealStockData(stock, startDate, endDate);
+        if (result && result.length > 0) {
+          allStockData[stock] = result;
+          console.log(`✅ ${stock} 數據處理完成: ${result.length} 天`);
+        } else {
+          console.log(`⚠️ ${stock} 無數據`);
+        }
+      } catch (error) {
+        console.error(`❌ ${stock} 數據獲取失敗:`, error);
+      }
+    }
+
+    const validStocks = Object.keys(allStockData).filter(
+      (stock) => allStockData[stock] && allStockData[stock].length > 0,
+    );
+
+    if (validStocks.length === 0) {
+      throw new Error('無法獲取任何有效股票數據');
+    }
+
+    console.log(`📊 成功獲取 ${validStocks.length} 支股票的數據，開始回測...`);
+
+    // 5. 執行回測邏輯（重用原來的邏輯）
+    const allDates = [
+      ...new Set(
+        Object.values(allStockData)
+          .flat()
+          .map((d) => {
+            // 添加日期有效性檢查
+            if (!d.date || isNaN(d.date.getTime())) {
+              console.warn('發現無效日期數據:', d);
+              return null;
+            }
+            return d.date.toISOString().split('T')[0];
+          })
+          .filter((dateStr) => dateStr !== null), // 過濾掉 null 值
+      ),
+    ].sort();
+
+    console.log(
+      `📅 回測期間: ${allDates[0]} 到 ${allDates[allDates.length - 1]}`,
+    );
+    console.log(`📈 回測天數: ${allDates.length} 天`);
+
+    // ... 這裡可以複用原來 runBacktest 中的完整邏輯 ...
+    // 為了簡化，我們先產生一個基本的結果
+
+    console.log('🎉 全部股票回測完成！');
+
+    // 6. 設定結果（簡化版）
+    const backtestResults: BacktestResults = {
+      performance: {
+        initialCapital: initialCapital,
+        finalCapital: currentCapital,
+        totalReturn: (currentCapital - initialCapital) / initialCapital,
+        annualReturn: 0.08, // 暫時的示例值
+        totalProfit: currentCapital - initialCapital,
+        maxDrawdown: 0.05,
+      },
+      trades: {
+        totalTrades: trades.length,
+        winningTrades: trades.filter((t) => (t.profit || 0) > 0).length,
+        losingTrades: trades.filter((t) => (t.profit || 0) <= 0).length,
+        winRate:
+          trades.length > 0
+            ? trades.filter((t) => (t.profit || 0) > 0).length / trades.length
+            : 0,
+        avgWin: 0.05,
+        avgLoss: -0.03,
+        maxWin: 0.15,
+        maxLoss: -0.08,
+        avgHoldingDays: 10,
+        profitFactor: 1.5,
+      },
+      detailedTrades: trades,
+      equityCurve: equityCurve,
+      stockPerformance: [], // 簡化版本：空數組
+    };
+
+    setResults(backtestResults);
+
+    // 7. 恢復原始股票清單
+    setStocks(originalStocks);
   };
 
   /**
@@ -1795,139 +1962,37 @@ const BacktestSystem = () => {
     setLoading(true);
 
     try {
-      // 1. 獲取所有股票清單
-      const allStockList = await fetchAllStocksList();
-      if (allStockList.length === 0) {
-        alert('無法獲取股票清單或股票清單為空');
+      if (useBackendBacktest) {
+        // 使用後端回測 - 全部股票
+        console.log('🚀 使用後端回測模式（全部股票）');
+
+        // 1. 獲取所有股票清單
+        const allStockList = await fetchAllStocksList();
+        if (allStockList.length === 0) {
+          alert('無法獲取股票清單或股票清單為空');
+          return;
+        }
+
+        console.log(`📊 準備後端回測 ${allStockList.length} 支股票...`);
+
+        const result = await runBacktestOnServer(
+          allStockList,
+          startDate,
+          endDate,
+          initialCapital,
+          strategyParams,
+        );
+
+        setResults(result);
+        console.log('result', result);
+        setStocks(allStockList); // 更新顯示的股票清單
+        console.log('✅ 後端全部股票回測完成');
         return;
       }
 
-      console.log(`📊 準備回測 ${allStockList.length} 支股票...`);
-
-      // 2. 暫時備份當前的股票清單
-      const originalStocks = [...stocks];
-
-      // 3. 設定所有股票到股票清單（這樣界面會顯示所有股票）
-      setStocks(allStockList);
-
-      // 4. 初始化回測變數
-      let currentCapital = initialCapital;
-      const trades: TradeResult[] = [];
-      const positions: Record<string, Position> = {};
-      const pendingSellOrders: Record<
-        string,
-        {
-          reason: string;
-          signalDate: Date;
-          targetExecutionDate: Date | null;
-          position: Position;
-        }
-      > = {}; // 待執行的賣出訂單
-      const equityCurve: {
-        date: string;
-        value: number;
-        cash: number;
-        positions: number;
-      }[] = [];
-
-      console.log('🚀 開始獲取真實股票數據...');
-      console.log('💡 請打開瀏覽器的開發者工具 Network 頁籤來查看 API 請求！');
-
-      const allStockData: Record<string, StockData[]> = {};
-      for (const stock of allStockList) {
-        console.log(`📈 正在處理 ${stock}...`);
-        try {
-          const result = await fetchRealStockData(stock, startDate, endDate);
-          if (result && result.length > 0) {
-            allStockData[stock] = result;
-            console.log(`✅ ${stock} 數據處理完成: ${result.length} 天`);
-          } else {
-            console.log(`⚠️ ${stock} 無數據`);
-          }
-        } catch (error) {
-          console.error(`❌ ${stock} 數據獲取失敗:`, error);
-        }
-      }
-
-      const validStocks = Object.keys(allStockData).filter(
-        (stock) => allStockData[stock] && allStockData[stock].length > 0,
-      );
-
-      if (validStocks.length === 0) {
-        throw new Error('無法獲取任何有效股票數據');
-      }
-
-      console.log(
-        `📊 成功獲取 ${validStocks.length} 支股票的數據，開始回測...`,
-      );
-
-      // 5. 執行回測邏輯（重用原來的邏輯）
-      const allDates = [
-        ...new Set(
-          Object.values(allStockData)
-            .flat()
-            .map((d) => {
-              // 添加日期有效性檢查
-              if (!d.date || isNaN(d.date.getTime())) {
-                console.warn('發現無效日期數據:', d);
-                return null;
-              }
-              return d.date.toISOString().split('T')[0];
-            })
-            .filter((dateStr) => dateStr !== null), // 過濾掉 null 值
-        ),
-      ].sort();
-
-      console.log(
-        `📅 回測期間: ${allDates[0]} 到 ${allDates[allDates.length - 1]}`,
-      );
-      console.log(`📈 回測天數: ${allDates.length} 天`);
-
-      // ... 這裡可以複用原來 runBacktest 中的完整邏輯 ...
-      // 為了簡化，我們先產生一個基本的結果
-
-      console.log('🎉 全部股票回測完成！');
-
-      // 6. 設定結果（簡化版）
-      const backtestResults: BacktestResults = {
-        performance: {
-          initialCapital: initialCapital,
-          finalCapital: currentCapital,
-          totalReturn: (currentCapital - initialCapital) / initialCapital,
-          annualReturn: 0.08, // 暫時的示例值
-          maxDrawdown: 0.05,
-          volatility: 0.15,
-          sharpeRatio: 1.2,
-        },
-        trades: {
-          totalTrades: trades.length,
-          winningTrades: trades.filter((t) => t.profit > 0).length,
-          losingTrades: trades.filter((t) => t.profit <= 0).length,
-          winRate:
-            trades.length > 0
-              ? trades.filter((t) => t.profit > 0).length / trades.length
-              : 0,
-          avgWin: 0.05,
-          avgLoss: -0.03,
-          maxWin: 0.15,
-          maxLoss: -0.08,
-          avgHoldingDays: 10,
-          profitFactor: 1.5,
-        },
-        transactions: trades,
-        equityCurve: equityCurve,
-        individualStockPerformance: {},
-        tradingPeriod: {
-          startDate: startDate,
-          endDate: endDate,
-          totalDays: allDates.length,
-        },
-      };
-
-      setResults(backtestResults);
-
-      // 7. 恢復原始股票清單
-      setStocks(originalStocks);
+      // 前端全部回測邏輯
+      console.log('🚀 使用前端回測模式（全部股票）');
+      await runFrontendFullBacktest();
     } catch (error: unknown) {
       console.error('❌ 全部回測執行錯誤:', error);
       const errorMessage =
@@ -3000,6 +3065,40 @@ const BacktestSystem = () => {
         </div>
 
         <div className="text-center space-y-4">
+          {/* 回測模式切換 */}
+          <div className="flex justify-center mb-4">
+            <div
+              className={`inline-flex rounded-lg p-1 transition-colors duration-300 ${
+                isDarkMode ? 'bg-gray-700' : 'bg-gray-200'
+              }`}
+            >
+              <button
+                onClick={() => setUseBackendBacktest(false)}
+                className={`px-4 py-2 rounded-md font-medium transition-all duration-200 ${
+                  !useBackendBacktest
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : isDarkMode
+                    ? 'text-gray-300 hover:text-white'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                前端回測
+              </button>
+              <button
+                onClick={() => setUseBackendBacktest(true)}
+                className={`px-4 py-2 rounded-md font-medium transition-all duration-200 ${
+                  useBackendBacktest
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : isDarkMode
+                    ? 'text-gray-300 hover:text-white'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                後端回測 ⚡
+              </button>
+            </div>
+          </div>
+
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             <div className="text-center">
               <button
@@ -3664,16 +3763,16 @@ const BacktestSystem = () => {
                           isDarkMode ? 'text-gray-300' : 'text-gray-700'
                         }`}
                       >
-                        {trade.buySignalDate?.toLocaleDateString() || '-'}
+                        {formatDate(trade.buySignalDate)}
                       </td>
                       <td
                         className={`px-4 py-2 transition-colors duration-300 ${
                           isDarkMode ? 'text-gray-300' : 'text-gray-700'
                         }`}
                       >
-                        {trade.actualBuyDate?.toLocaleDateString() ||
-                          trade.entryDate?.toLocaleDateString() ||
-                          '-'}
+                        {formatDate(trade.actualBuyDate) !== '-'
+                          ? formatDate(trade.actualBuyDate)
+                          : formatDate(trade.entryDate)}
                       </td>
                       <td
                         className={`px-4 py-2 transition-colors duration-300 ${
@@ -3681,7 +3780,7 @@ const BacktestSystem = () => {
                         }`}
                       >
                         {trade.action === 'SELL'
-                          ? trade.sellSignalDate?.toLocaleDateString() || '-'
+                          ? formatDate(trade.sellSignalDate)
                           : '-'}
                       </td>
                       <td
@@ -3690,8 +3789,9 @@ const BacktestSystem = () => {
                         }`}
                       >
                         {trade.action === 'SELL'
-                          ? trade.actualSellDate?.toLocaleDateString() ||
-                            trade.date.toLocaleDateString()
+                          ? formatDate(trade.actualSellDate) !== '-'
+                            ? formatDate(trade.actualSellDate)
+                            : formatDate(trade.date)
                           : '-'}
                       </td>
                       <td
