@@ -1898,7 +1898,7 @@ const BacktestSystem = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {results.detailedTrades.slice(-20).map((trade, index) => (
+                  {results.detailedTrades.map((trade, index) => (
                     <tr
                       key={index}
                       className={`border-b transition-colors duration-300 ${

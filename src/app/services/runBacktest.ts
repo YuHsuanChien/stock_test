@@ -38,6 +38,11 @@ import {
  * @
  * @returns void - 結果存儲在 results state 中
  */
+// 🔍 完整的前端調試代碼 - 在 runBacktest.ts 中的修改
+
+/**
+ * 回測引擎主函數 (添加調試版本)
+ */
 export const runBacktest = async (
   stocks: string[],
   startDate: string,
@@ -128,6 +133,38 @@ export const runBacktest = async (
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
 
+    // 🔍 新增：檢查1517的完整數據
+    console.log('🔍 檢查1517的完整數據範圍...');
+    if (allStockData['1517']) {
+      const stock1517Data = allStockData['1517'];
+      console.log('🔍 1517 數據範圍:', {
+        總筆數: stock1517Data.length,
+        開始日期: stock1517Data[0]?.date.toISOString().split('T')[0],
+        結束日期: stock1517Data[stock1517Data.length - 1]?.date.toISOString().split('T')[0]
+      });
+
+      // 檢查關鍵日期的數據
+      const keyDates = ['2024-12-06', '2024-12-09', '2024-12-10', '2024-12-11', '2024-12-12', '2024-12-13', '2024-12-16', '2024-12-17'];
+      
+      console.log('🔍 1517 關鍵日期數據檢查:');
+      keyDates.forEach(date => {
+        const dayData = stock1517Data.find(d => d.date.toISOString().split('T')[0] === date);
+        if (dayData) {
+          console.log(`🔍 前端 ${date}:`, {
+            open: dayData.open,
+            high: dayData.high,
+            low: dayData.low,
+            close: dayData.close,
+            volume: dayData.volume,
+            rsi: dayData.rsi?.toFixed(2),
+            是否交易日: '是'
+          });
+        } else {
+          console.log(`🔍 前端 ${date}: 無數據 (可能非交易日或數據缺失)`);
+        }
+      });
+    }
+
     const validStocks = Object.keys(allStockData).filter(
       (stock) => allStockData[stock] && allStockData[stock].length > 0,
     );
@@ -145,6 +182,29 @@ export const runBacktest = async (
           .map((d) => d.date.toISOString().split('T')[0]),
       ),
     ].sort();
+
+    // 🔍 新增：檢查交易日列表
+    console.log('🔍 前端交易日列表 (12/06-12/18):', 
+      allDates.filter(date => date >= '2024-12-06' && date <= '2024-12-18')
+    );
+
+    // 🔍 新增：檢查12/12是否為交易日
+    console.log('🔍 檢查關鍵日期是否為交易日...');
+    const dec11 = new Date('2024-12-11');
+    const dec12 = new Date('2024-12-12');
+    const dec13 = new Date('2024-12-13');
+    
+    const isDec11TradingDay = isTradingDay(dec11, allStockData);
+    const isDec12TradingDay = isTradingDay(dec12, allStockData);
+    const isDec13TradingDay = isTradingDay(dec13, allStockData);
+    
+    console.log(`🔍 2024-12-11 是否為交易日: ${isDec11TradingDay}`);
+    console.log(`🔍 2024-12-12 是否為交易日: ${isDec12TradingDay}`);
+    console.log(`🔍 2024-12-13 是否為交易日: ${isDec13TradingDay}`);
+
+    // 🔍 新增：檢查 findNextTradingDay 函數
+    const nextTradingDayFromDec11 = findNextTradingDay(dec11, allStockData);
+    console.log(`🔍 2024-12-11 的下一個交易日: ${nextTradingDayFromDec11?.toISOString().split('T')[0]}`);
 
     for (const dateStr of allDates) {
       const currentDate = new Date(dateStr);
@@ -192,6 +252,35 @@ export const runBacktest = async (
             數據日期: ${currentDataDateStr}
             跳過此股票處理`);
           continue;
+        }
+
+        // 🔍 新增：1517的詳細數據調試
+        if (stock === '1517' && ['2024-12-06', '2024-12-09', '2024-12-10', '2024-12-11', '2024-12-12', '2024-12-13', '2024-12-16', '2024-12-17'].includes(dateStr)) {
+          console.log(`🔍 前端 ${dateStr} ${stock} 數據:`, {
+            date: dateStr,
+            open: current.open,
+            high: current.high,
+            low: current.low,
+            close: current.close,
+            volume: current.volume,
+            rsi: current.rsi?.toFixed(2),
+            macd: current.macd?.toFixed(4),
+            volumeRatio: current.volumeRatio?.toFixed(2)
+          });
+
+          // 如果有持倉，也輸出持倉信息
+          if (positions[stock]) {
+            const position = positions[stock];
+            const currentProfit = (current.close - position.entryPrice) / position.entryPrice;
+            console.log(`🔍 前端 ${dateStr} ${stock} 持倉信息:`, {
+              entryPrice: position.entryPrice,
+              currentPrice: current.close,
+              highPriceSinceEntry: position.highPriceSinceEntry,
+              trailingStopPrice: position.trailingStopPrice,
+              currentProfit: (currentProfit * 100).toFixed(2) + '%',
+              holdingDays: Math.floor((new Date(dateStr).getTime() - position.entryDate.getTime()) / (1000 * 60 * 60 * 24))
+            });
+          }
         }
 
         console.log(`✅ ${dateStr} ${stock} 日期匹配確認 - 使用正確數據`);
@@ -473,6 +562,45 @@ export const runBacktest = async (
               將於下一交易日開盤執行`);
           }
         }
+
+        // 🔍 新增：追蹤1517最高價的更新過程
+        if (stock === '1517' && positions[stock]) {
+          const position = positions[stock];
+          const oldHigh = position.highPriceSinceEntry;
+          
+          if (current.high > position.highPriceSinceEntry) {
+            position.highPriceSinceEntry = current.high;
+            console.log(`📈 前端 ${dateStr} ${stock} 最高價更新: ${oldHigh} → ${current.high}`);
+            
+            if (strategyParams.enableTrailingStop) {
+              const gainSinceEntry = (current.high - position.entryPrice) / position.entryPrice;
+              if (gainSinceEntry >= strategyParams.trailingActivatePercent) {
+                const oldTrailingStop = position.trailingStopPrice;
+                position.trailingStopPrice = current.high * (1 - strategyParams.trailingStopPercent);
+                console.log(`🎯 前端 ${dateStr} ${stock} 追蹤停利更新: ${oldTrailingStop.toFixed(4)} → ${position.trailingStopPrice.toFixed(4)}`);
+              }
+            }
+          } else {
+            console.log(`📊 前端 ${dateStr} ${stock} 最高價維持: ${oldHigh} (當日最高: ${current.high})`);
+          }
+
+          // 詳細追蹤停利狀態
+          const currentProfit = (current.close - position.entryPrice) / position.entryPrice;
+          const profitSinceEntry = (position.highPriceSinceEntry - position.entryPrice) / position.entryPrice;
+          
+          console.log(`🔍 前端 ${dateStr} ${stock} 詳細追蹤停利狀態:`, {
+            當日最高價: current.high,
+            當日最低價: current.low,
+            當日收盤價: current.close,
+            歷史最高價: position.highPriceSinceEntry,
+            追蹤停利價: position.trailingStopPrice.toFixed(4),
+            當前獲利: (currentProfit * 100).toFixed(2) + '%',
+            最高獲利: (profitSinceEntry * 100).toFixed(2) + '%',
+            啟動門檻: (strategyParams.trailingActivatePercent * 100).toFixed(1) + '%',
+            是否啟動追蹤: profitSinceEntry >= strategyParams.trailingActivatePercent ? '是' : '否',
+            是否觸發停利: current.low <= position.trailingStopPrice ? '是' : '否'
+          });
+        }
       }
 
       let positionValue = 0;
@@ -584,7 +712,6 @@ export const runBacktest = async (
                 0,
               ) / completedTrades.length
             : 0,
-        // 新增獲利因子計算
         profitFactor: (() => {
           const totalGains = winningTrades.reduce(
             (sum, t) => sum + Math.abs(t.profit || 0),
