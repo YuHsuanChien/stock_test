@@ -35,10 +35,7 @@ import {
   Pie,
   Cell,
 } from 'recharts';
-import {
-  BacktestResults,
-  StrategyParams,
-} from './interfaces/stockData';
+import { BacktestResults, StrategyParams } from './interfaces/stockData';
 import { runBacktest } from './services/runBacktest';
 import { runFullBacktest } from './services/runFullBacktest';
 
@@ -85,6 +82,7 @@ const BacktestSystem = () => {
     macdSlow: 26,
     macdSignal: 9,
     volumeThreshold: 1.5, // 提高為Python標準：1.5倍
+    volumeLimit: 1000,
     maxPositionSize: 0.25, // Python: 最大單檔25%
     stopLoss: 0.06,
     stopProfit: 0.12,
@@ -223,7 +221,7 @@ const BacktestSystem = () => {
 
   return (
     <div
-      className={`w-full max-w-7xl mx-auto p-6 min-h-screen transition-colors duration-300 ${
+      className={`w-full max-w-[80%] mx-auto p-6 min-h-screen transition-colors duration-300 ${
         isDarkMode ? 'bg-gray-900' : 'bg-gray-50'
       }`}
     >
@@ -523,7 +521,7 @@ const BacktestSystem = () => {
                   isDarkMode ? 'text-gray-300' : 'text-gray-600'
                 }`}
               >
-                RSI超賣
+                RSI超賣買點區間的上限
               </label>
               <input
                 type="number"
@@ -881,6 +879,41 @@ const BacktestSystem = () => {
                     }`}
                   >
                     {strategyParams.volumeThreshold.toFixed(1)}倍平均量
+                  </div>
+                </div>
+
+                <div>
+                  <label
+                    className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                      isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                    }`}
+                  >
+                    基本成交量(張)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="1.0"
+                    max="3.0"
+                    className={`w-full px-2 py-1 text-sm border rounded focus:ring-1 focus:ring-green-500 transition-colors duration-300 ${
+                      isDarkMode
+                        ? 'bg-orange-900/20 border-green-600 text-white'
+                        : 'bg-orange-50 border-green-300 text-gray-900'
+                    }`}
+                    value={strategyParams.volumeLimit}
+                    onChange={(e) =>
+                      setStrategyParams({
+                        ...strategyParams,
+                        volumeLimit: Number(e.target.value),
+                      })
+                    }
+                  />
+                  <div
+                    className={`text-xs mt-1 transition-colors duration-300 ${
+                      isDarkMode ? 'text-green-400' : 'text-green-600'
+                    }`}
+                  >
+                    成交量高於{strategyParams.volumeLimit} (張)
                   </div>
                 </div>
               </div>
@@ -2026,7 +2059,7 @@ const BacktestSystem = () => {
                   isDarkMode ? 'text-gray-400' : 'text-gray-500'
                 }`}
               >
-                顯示最近20筆交易，共{results.detailedTrades.length}筆
+                共 {results.detailedTrades.length} 筆交易資料
               </div>
             )}
           </div>
