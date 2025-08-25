@@ -42,9 +42,6 @@ import { runFullBacktest } from './services/runFullBacktest';
 const BacktestSystem = () => {
   // 暗亮模式狀態
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
-  // 回測模式狀態：true為後端回測，false為前端回測
-  const [useBackendBacktest, setUseBackendBacktest] = useState<boolean>(true);
-
   const [stocks, setStocks] = useState<string[]>(['2330', '2454', '2317']);
   const [startDate, setStartDate] = useState<string>('2020-01-01');
   const [endDate, setEndDate] = useState<string>('2025-08-05');
@@ -141,7 +138,6 @@ const BacktestSystem = () => {
       endDate,
       initialCapital,
       strategyParams,
-      useBackendBacktest,
       setResults,
       setLoading,
     );
@@ -149,7 +145,6 @@ const BacktestSystem = () => {
 
   const handleRunFullBacktest = async () => {
     await runFullBacktest(
-      useBackendBacktest,
       startDate,
       endDate,
       initialCapital,
@@ -1260,36 +1255,11 @@ const BacktestSystem = () => {
         <div className="text-center space-y-4">
           {/* 回測模式切換 */}
           <div className="flex justify-center mb-4">
-            <div
-              className={`inline-flex rounded-lg p-1 transition-colors duration-300 ${
-                isDarkMode ? 'bg-gray-700' : 'bg-gray-200'
-              }`}
+            <button
+              className={`px-4 py-2 rounded-md font-medium transition-all duration-200 `}
             >
-              <button
-                onClick={() => setUseBackendBacktest(false)}
-                className={`px-4 py-2 rounded-md font-medium transition-all duration-200 ${
-                  !useBackendBacktest
-                    ? 'bg-white text-blue-600 shadow-sm'
-                    : isDarkMode
-                    ? 'text-gray-300 hover:text-white'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                前端回測
-              </button>
-              <button
-                onClick={() => setUseBackendBacktest(true)}
-                className={`px-4 py-2 rounded-md font-medium transition-all duration-200 ${
-                  useBackendBacktest
-                    ? 'bg-white text-blue-600 shadow-sm'
-                    : isDarkMode
-                    ? 'text-gray-300 hover:text-white'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                後端回測 ⚡
-              </button>
-            </div>
+              後端回測 ⚡
+            </button>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">

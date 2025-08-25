@@ -39,42 +39,6 @@ export interface RawStockData {
   volume: number;
 }
 
-export interface TradeResult {
-  stock: string;
-  action: string;
-  date: Date; // 實際執行日期（買入/賣出）
-  price: number;
-  quantity: number;
-  amount: number;
-  // 詳細日期資訊
-  buySignalDate?: Date; // 買進訊號日期
-  sellSignalDate?: Date; // 賣出訊號日期
-  actualBuyDate?: Date; // 實際購買日期
-  actualSellDate?: Date; // 實際賣出日期
-  // 舊欄位保留向後相容
-  entryPrice?: number;
-  entryDate?: Date;
-  holdingDays?: number;
-  profit?: number;
-  profitRate?: number;
-  reason: string;
-  confidence?: number;
-}
-
-export interface Position {
-  entryDate: Date; // 實際進場日期
-  entryPrice: number;
-  quantity: number;
-  investAmount: number;
-  confidence?: number;
-  buySignalDate?: Date; // 買進訊號日期
-  // 新增追蹤停利相關欄位
-  highPriceSinceEntry: number; // 進場後最高價
-  trailingStopPrice: number; // 追蹤停損價
-  atrStopPrice?: number; // ATR動態停損價
-  entryATR?: number; // 進場時的ATR值
-}
-
 export interface BacktestResults {
   performance: {
     initialCapital: number;
