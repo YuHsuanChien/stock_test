@@ -1,11 +1,15 @@
 import { fetchAllStocksList, runBacktestOnServer } from './stock_api';
-import { BacktestResults, StrategyParams } from '../interfaces/stockData';
+import {
+  BacktestResults,
+  RsiStrategyParams,
+  WStrategyParams,
+} from '../interfaces/stockData';
 
 export const runFullBacktest = async (
   startDate: string,
   endDate: string,
   initialCapital: number,
-  strategyParams: StrategyParams,
+  strategyParams: RsiStrategyParams | WStrategyParams,
   setStocks: (stocks: string[]) => void,
   setResults: (results: BacktestResults) => void,
   setLoading: (loading: boolean) => void,

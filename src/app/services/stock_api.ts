@@ -1,40 +1,15 @@
 import { StockData } from '../interfaces/stockData';
-import { RawStockData } from '../interfaces/stockData';
+import {
+  RawStockData,
+  WStrategyParams,
+  RsiStrategyParams,
+} from '../interfaces/stockData';
 
 /**
  * 股票清單項目的介面定義
  */
 interface StockListItem {
   symbol: string;
-}
-
-// 導入策略參數介面
-interface StrategyParams {
-  rsiPeriod: number;
-  rsiOversold: number;
-  macdFast: number;
-  macdSlow: number;
-  macdSignal: number;
-  volumeThreshold: number;
-  maxPositionSize: number;
-  stopLoss: number;
-  stopProfit: number;
-  confidenceThreshold: number;
-  enableTrailingStop: boolean;
-  trailingStopPercent: number;
-  trailingActivatePercent: number;
-  enableATRStop: boolean;
-  atrPeriod: number;
-  atrMultiplier: number;
-  minHoldingDays: number;
-  enablePriceMomentum: boolean;
-  priceMomentumPeriod: number;
-  priceMomentumThreshold: number;
-  enableMA60: boolean;
-  maxTotalExposure: number;
-  usePythonLogic: boolean;
-  hierarchicalDecision: boolean;
-  dynamicPositionSize: boolean;
 }
 
 /**
@@ -45,7 +20,7 @@ interface BacktestRequest {
   startDate: string;
   endDate: string;
   initialCapital: number;
-  strategyParams?: StrategyParams;
+  strategyParams?: RsiStrategyParams | WStrategyParams;
 }
 
 // 回測結果介面 - 與前端保持一致
@@ -120,7 +95,7 @@ export const runBacktestOnServer = async (
   startDate: string,
   endDate: string,
   initialCapital: number,
-  strategyParams?: StrategyParams,
+  strategyParams: RsiStrategyParams | WStrategyParams,
 ): Promise<BacktestResults> => {
   console.log('🔥 開始執行後端回測...');
 
@@ -219,7 +194,6 @@ export const fetchAllStocksList = async (): Promise<string[]> => {
       }
     }
 
-
     console.log(
       `✅ 成功獲取 ${stocks.length} 支股票:`,
       stocks.slice(0, 10),
@@ -232,9 +206,6 @@ export const fetchAllStocksList = async (): Promise<string[]> => {
     return [];
   }
 };
-
-
-
 
 /**
  * 從nest.js後端向富邦取得資料

@@ -75,6 +75,10 @@ export interface BacktestResults {
   }[];
 }
 
+export interface WStrategyParams {
+  strategy: string;
+}
+
 export interface RsiStrategyParams {
   strategy: string;
   rsiPeriod: number;

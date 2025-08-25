@@ -35,7 +35,11 @@ import {
   Pie,
   Cell,
 } from 'recharts';
-import { BacktestResults, RsiStrategyParams } from './interfaces/stockData';
+import {
+  BacktestResults,
+  RsiStrategyParams,
+  WStrategyParams,
+} from './interfaces/stockData';
 import { runBacktest } from './services/runBacktest';
 import { runFullBacktest } from './services/runFullBacktest';
 import W_Strategy from './components/w_strategy';
@@ -75,7 +79,9 @@ const BacktestSystem = () => {
     }
   }, []);
 
-  const [W_StrategyParams, setW_StrategyParams] = useState();
+  const [W_StrategyParams, setW_StrategyParams] = useState<WStrategyParams>({
+    strategy: 'W_Strategy',
+  });
 
   const [rsiStrategyParams, setRsiStrategyParams] = useState<RsiStrategyParams>(
     {

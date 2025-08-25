@@ -1,5 +1,9 @@
 import { runBacktestOnServer } from './stock_api';
-import { StrategyParams, BacktestResults } from '../interfaces/stockData';
+import {
+  RsiStrategyParams,
+  BacktestResults,
+  WStrategyParams,
+} from '../interfaces/stockData';
 
 /**
  * 回測引擎主函數
@@ -32,7 +36,7 @@ export const runBacktest = async (
   startDate: string,
   endDate: string,
   initialCapital: number,
-  strategyParams: StrategyParams,
+  strategyParams: RsiStrategyParams | WStrategyParams,
   setResults: (r: BacktestResults) => void,
   setLoading: (b: boolean) => void,
 ) => {
