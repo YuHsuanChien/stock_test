@@ -80,7 +80,7 @@ const BacktestSystem = () => {
   }, []);
 
   const [W_StrategyParams, setW_StrategyParams] = useState<WStrategyParams>({
-    strategy: 'W_Strategy',
+    strategy: 'w_strategy',
   });
 
   const [rsiStrategyParams, setRsiStrategyParams] = useState<RsiStrategyParams>(
