@@ -1,5 +1,5 @@
 import React from 'react';
-import { StrategyParams } from '../interfaces/stockData';
+import { RsiStrategyParams } from '../interfaces/stockData';
 
 export default function RSI_MACD_Strategy({
   selectedStrategy,
@@ -9,8 +9,8 @@ export default function RSI_MACD_Strategy({
 }: {
   selectedStrategy: string;
   isDarkMode: boolean;
-  strategyParams: StrategyParams;
-  setStrategyParams: (params: StrategyParams) => void;
+  strategyParams: RsiStrategyParams;
+  setStrategyParams: (params: RsiStrategyParams) => void;
 }) {
   return (
     <div

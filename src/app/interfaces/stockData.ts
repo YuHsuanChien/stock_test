@@ -75,7 +75,8 @@ export interface BacktestResults {
   }[];
 }
 
-export interface StrategyParams {
+export interface RsiStrategyParams {
+  strategy: string;
   rsiPeriod: number;
   rsiOversold: number;
   macdFast: number;
@@ -117,4 +118,26 @@ export interface BuySignalResult {
 export interface SellSignalResult {
   signal: boolean;
   reason: string;
+}
+
+export interface TradeResult {
+  stock: string;
+  action: string;
+  date: Date; // 實際執行日期（買入/賣出）
+  price: number;
+  quantity: number;
+  amount: number;
+  // 詳細日期資訊
+  buySignalDate?: Date; // 買進訊號日期
+  sellSignalDate?: Date; // 賣出訊號日期
+  actualBuyDate?: Date; // 實際購買日期
+  actualSellDate?: Date; // 實際賣出日期
+  // 舊欄位保留向後相容
+  entryPrice?: number;
+  entryDate?: Date;
+  holdingDays?: number;
+  profit?: number;
+  profitRate?: number;
+  reason: string;
+  confidence?: number;
 }

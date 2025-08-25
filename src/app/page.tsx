@@ -35,7 +35,7 @@ import {
   Pie,
   Cell,
 } from 'recharts';
-import { BacktestResults, StrategyParams } from './interfaces/stockData';
+import { BacktestResults, RsiStrategyParams } from './interfaces/stockData';
 import { runBacktest } from './services/runBacktest';
 import { runFullBacktest } from './services/runFullBacktest';
 import W_Strategy from './components/w_strategy';
@@ -75,45 +75,50 @@ const BacktestSystem = () => {
     }
   }, []);
 
-  const [strategyParams, setStrategyParams] = useState<StrategyParams>({
-    // 基礎技術指標參數 (與Python一致)
-    rsiPeriod: 14,
-    rsiOversold: 35, // 調整為Python標準：35 (深度超賣為25)
-    macdFast: 12,
-    macdSlow: 26,
-    macdSignal: 9,
-    volumeThreshold: 1.5, // 提高為Python標準：1.5倍
-    volumeLimit: 1000,
-    maxPositionSize: 0.25, // Python: 最大單檔25%
-    stopLoss: 0.06,
-    stopProfit: 0.12,
-    confidenceThreshold: 0.6, // 平衡Python(70%)與原版(40%)：設定60%
+  const [W_StrategyParams, setW_StrategyParams] = useState();
 
-    // 高優先級參數 (追蹤停利機制)
-    enableTrailingStop: true,
-    trailingStopPercent: 0.05, // Python: 5%追蹤停利
-    trailingActivatePercent: 0.03, // Python: 3%獲利後啟動追蹤
+  const [rsiStrategyParams, setRsiStrategyParams] = useState<RsiStrategyParams>(
+    {
+      // 基礎技術指標參數 (與Python一致)
+      strategy: 'rsi_macd',
+      rsiPeriod: 14,
+      rsiOversold: 35, // 調整為Python標準：35 (深度超賣為25)
+      macdFast: 12,
+      macdSlow: 26,
+      macdSignal: 9,
+      volumeThreshold: 1.5, // 提高為Python標準：1.5倍
+      volumeLimit: 1000,
+      maxPositionSize: 0.25, // Python: 最大單檔25%
+      stopLoss: 0.06,
+      stopProfit: 0.12,
+      confidenceThreshold: 0.6, // 平衡Python(70%)與原版(40%)：設定60%
 
-    // 中優先級參數 (ATR動態停損)
-    enableATRStop: true,
-    atrPeriod: 14, // Python: ATR週期14天
-    atrMultiplier: 2.0, // Python: ATR倍數2.0
-    minHoldingDays: 5, // Python: 最少持有5天 (避免剛進場就被洗出)
+      // 高優先級參數 (追蹤停利機制)
+      enableTrailingStop: true,
+      trailingStopPercent: 0.05, // Python: 5%追蹤停利
+      trailingActivatePercent: 0.03, // Python: 3%獲利後啟動追蹤
 
-    // 價格動能指標
-    enablePriceMomentum: true,
-    priceMomentumPeriod: 5, // Python: 5日價格動能
-    priceMomentumThreshold: 0.03, // Python: 3%動能門檻 (提高精準度)
+      // 中優先級參數 (ATR動態停損)
+      enableATRStop: true,
+      atrPeriod: 14, // Python: ATR週期14天
+      atrMultiplier: 2.0, // Python: ATR倍數2.0
+      minHoldingDays: 5, // Python: 最少持有5天 (避免剛進場就被洗出)
 
-    // 低優先級參數 (MA60季線)
-    enableMA60: false, // Python預設不啟用，但可選擇開啟
+      // 價格動能指標
+      enablePriceMomentum: true,
+      priceMomentumPeriod: 5, // Python: 5日價格動能
+      priceMomentumThreshold: 0.03, // Python: 3%動能門檻 (提高精準度)
 
-    // 新增：Python風格優化參數
-    maxTotalExposure: 0.75, // Python: 最大總曝險度75%
-    usePythonLogic: true, // 啟用Python決策邏輯 (預設開啟以獲得更好表現)
-    hierarchicalDecision: true, // 階層決策模式
-    dynamicPositionSize: true, // 動態倉位調整
-  });
+      // 低優先級參數 (MA60季線)
+      enableMA60: false, // Python預設不啟用，但可選擇開啟
+
+      // 新增：Python風格優化參數
+      maxTotalExposure: 0.75, // Python: 最大總曝險度75%
+      usePythonLogic: true, // 啟用Python決策邏輯 (預設開啟以獲得更好表現)
+      hierarchicalDecision: true, // 階層決策模式
+      dynamicPositionSize: true, // 動態倉位調整
+    },
+  );
 
   /**
    * 回測引擎主函數
@@ -136,28 +141,53 @@ const BacktestSystem = () => {
    * @returns void - 結果存儲在 results state 中
    */
   const handleRunBacktest = async () => {
-    await runBacktest(
-      stocks,
-      startDate,
-      endDate,
-      initialCapital,
-      strategyParams,
-      setResults,
-      setLoading,
-    );
+    if (selectedStrategy == 'RSI_MACD_Strategy') {
+      await runBacktest(
+        stocks,
+        startDate,
+        endDate,
+        initialCapital,
+        rsiStrategyParams,
+        setResults,
+        setLoading,
+      );
+    } else {
+      await runBacktest(
+        stocks,
+        startDate,
+        endDate,
+        initialCapital,
+        W_StrategyParams,
+        setResults,
+        setLoading,
+      );
+    }
   };
 
   const handleRunFullBacktest = async () => {
-    await runFullBacktest(
-      startDate,
-      endDate,
-      initialCapital,
-      strategyParams,
-      setStocks,
-      setResults,
-      setLoading,
-      stocks,
-    );
+    if (selectedStrategy == 'RSI_MACD_Strategy') {
+      await runFullBacktest(
+        startDate,
+        endDate,
+        initialCapital,
+        rsiStrategyParams,
+        setStocks,
+        setResults,
+        setLoading,
+        stocks,
+      );
+    } else {
+      await runFullBacktest(
+        startDate,
+        endDate,
+        initialCapital,
+        W_StrategyParams,
+        setStocks,
+        setResults,
+        setLoading,
+        stocks,
+      );
+    }
   };
 
   /**
@@ -512,8 +542,8 @@ const BacktestSystem = () => {
         <RSI_MACD_Strategy
           selectedStrategy={selectedStrategy}
           isDarkMode={isDarkMode}
-          strategyParams={strategyParams}
-          setStrategyParams={setStrategyParams}
+          strategyParams={rsiStrategyParams}
+          setStrategyParams={setRsiStrategyParams}
         />
 
         <div className="text-center space-y-4">
@@ -1379,94 +1409,6 @@ const BacktestSystem = () => {
           </div>
         </div>
       )}
-
-      <div
-        className={`rounded-lg shadow-lg p-6 mt-6 transition-colors duration-300 ${
-          isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
-        }`}
-      >
-        <h3
-          className={`text-xl font-bold mb-4 transition-colors duration-300 ${
-            isDarkMode ? 'text-white' : 'text-gray-800'
-          }`}
-        >
-          使用說明
-        </h3>
-        <div
-          className={`grid grid-cols-1 md:grid-cols-2 gap-6 text-sm transition-colors duration-300 ${
-            isDarkMode ? 'text-gray-300' : 'text-gray-700'
-          }`}
-        >
-          <div>
-            <h4
-              className={`font-semibold mb-2 transition-colors duration-300 ${
-                isDarkMode ? 'text-gray-200' : 'text-gray-800'
-              }`}
-            >
-              📈 策略邏輯
-            </h4>
-            <ul className="space-y-1">
-              <li>
-                • <strong>進場條件</strong>: RSI超賣回升 + MACD黃金交叉 +
-                成交量放大 + 信心度≥
-                {(strategyParams.confidenceThreshold * 100).toFixed(0)}%
-              </li>
-              <li>
-                • <strong>出場條件</strong>: 停利
-                {(strategyParams.stopProfit * 100).toFixed(0)}% 或 停損
-                {(strategyParams.stopLoss * 100).toFixed(0)}% 或 技術面轉弱
-              </li>
-              <li>
-                • <strong>倉位管理</strong>: 根據信心度動態調整投入比例
-              </li>
-              <li>
-                • <strong>風險控制</strong>: 單檔最大25%，總倉位最大75%
-              </li>
-            </ul>
-          </div>
-          <div>
-            <h4
-              className={`font-semibold mb-2 transition-colors duration-300 ${
-                isDarkMode ? 'text-gray-200' : 'text-gray-800'
-              }`}
-            >
-              🔧 參數調整
-            </h4>
-            <ul className="space-y-1">
-              <li>
-                • <strong>RSI週期</strong>: 建議10-21，預設14
-              </li>
-              <li>
-                • <strong>MACD參數</strong>: 快線8-15，慢線20-35
-              </li>
-              <li>
-                • <strong>信心度門檻</strong>: 0.3-0.8，預設0.5
-              </li>
-              <li>
-                • <strong>停損停利</strong>: 可根據個股波動度調整
-              </li>
-            </ul>
-          </div>
-        </div>
-        <div
-          className={`mt-4 p-4 border rounded-lg transition-colors duration-300 ${
-            isDarkMode
-              ? 'bg-yellow-900/20 border-yellow-600'
-              : 'bg-yellow-50 border-yellow-200'
-          }`}
-        >
-          <p
-            className={`text-sm transition-colors duration-300 ${
-              isDarkMode ? 'text-yellow-300' : 'text-yellow-800'
-            }`}
-          >
-            <strong>📊 數據來源說明</strong>: 本系統優先使用Yahoo Finance
-            API獲取真實台股歷史數據。
-            如API無法連接，將自動降級使用增強型模擬數據（基於真實股價特性設計）。
-            過去績效不代表未來表現，請謹慎評估風險後使用。
-          </p>
-        </div>
-      </div>
     </div>
   );
 };
