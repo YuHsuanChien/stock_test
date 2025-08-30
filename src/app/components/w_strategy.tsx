@@ -1,11 +1,18 @@
+// src/app/components/w_strategy.tsx
+
 import React from 'react';
+import { WStrategyParams } from '../interfaces/stockData';
 
 export default function W_Strategy({
   selectedStrategy,
   isDarkMode,
+  strategyParams,
+  setStrategyParams,
 }: {
   selectedStrategy: string;
   isDarkMode: boolean;
+  strategyParams: WStrategyParams;
+  setStrategyParams: (params: WStrategyParams) => void;
 }) {
   return (
     <div
@@ -20,6 +27,313 @@ export default function W_Strategy({
       >
         回後買上漲策略參數
       </h3>
+
+      {/* 底底高、頭頭高分析區域 */}
+      <div
+        className={`mb-6 p-4 border rounded-lg transition-colors duration-300 ${
+          isDarkMode
+            ? 'bg-purple-900/30 border-purple-700'
+            : 'bg-purple-50 border-purple-200'
+        }`}
+      >
+        <h4
+          className={`text-md font-semibold mb-3 transition-colors duration-300 ${
+            isDarkMode ? 'text-purple-300' : 'text-purple-800'
+          }`}
+        >
+          🎯 底底高、頭頭高分析
+        </h4>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* 啟用分析 */}
+          <div className="space-y-2">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={strategyParams.enableHighLowAnalysis}
+                onChange={(e) =>
+                  setStrategyParams({
+                    ...strategyParams,
+                    enableHighLowAnalysis: e.target.checked,
+                  })
+                }
+                className="form-checkbox h-4 w-4 text-purple-600"
+              />
+              <span
+                className={`text-sm font-medium transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                }`}
+              >
+                啟用底底高、頭頭高分析
+              </span>
+            </label>
+            <div
+              className={`text-xs transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-400' : 'text-gray-600'
+              }`}
+            >
+              根據MA5穿越點識別高低點，判定趨勢健康度
+            </div>
+          </div>
+
+          {/* 顯示圖表 */}
+          <div className="space-y-2">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={strategyParams.showHighLowChart}
+                onChange={(e) =>
+                  setStrategyParams({
+                    ...strategyParams,
+                    showHighLowChart: e.target.checked,
+                  })
+                }
+                className="form-checkbox h-4 w-4 text-purple-600"
+                disabled={!strategyParams.enableHighLowAnalysis}
+              />
+              <span
+                className={`text-sm font-medium transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                } ${!strategyParams.enableHighLowAnalysis ? 'opacity-50' : ''}`}
+              >
+                顯示K線標記圖表
+              </span>
+            </label>
+            <div
+              className={`text-xs transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-400' : 'text-gray-600'
+              }`}
+            >
+              在回測結果中顯示標記了高低點的K線圖
+            </div>
+          </div>
+        </div>
+
+        {/* 功能說明 */}
+        {strategyParams.enableHighLowAnalysis && (
+          <div
+            className={`mt-4 p-3 rounded border transition-colors duration-300 ${
+              isDarkMode
+                ? 'bg-purple-800/20 border-purple-600'
+                : 'bg-white border-purple-300'
+            }`}
+          >
+            <h5
+              className={`text-sm font-semibold mb-2 transition-colors duration-300 ${
+                isDarkMode ? 'text-purple-300' : 'text-purple-700'
+              }`}
+            >
+              📋 分析邏輯說明
+            </h5>
+            <div
+              className={`text-xs space-y-1 transition-colors duration-300 ${
+                isDarkMode ? 'text-purple-200' : 'text-purple-600'
+              }`}
+            >
+              <div>
+                <strong>底（低點）：</strong>收盤價跌破MA5 → 重新突破MA5
+                期間的最低收盤價
+              </div>
+              <div>
+                <strong>高（高點）：</strong>收盤價突破MA5 → 重新跌破MA5
+                期間的最高收盤價
+              </div>
+              <div>
+                <strong>底底高：</strong>連續的底部一個比一個高
+              </div>
+              <div>
+                <strong>頭頭高：</strong>連續的高點一個比一個高
+              </div>
+              <div>
+                <strong>趨勢確認：</strong>同時滿足底底高 + 頭頭高 =
+                健康上升趨勢
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 其他策略參數 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+        <div>
+          <label className="flex items-center space-x-2 mb-2">
+            <input
+              type="checkbox"
+              checked={strategyParams.ma5Breakthrough}
+              onChange={(e) =>
+                setStrategyParams({
+                  ...strategyParams,
+                  ma5Breakthrough: e.target.checked,
+                })
+              }
+              className="form-checkbox h-4 w-4 text-blue-600"
+            />
+            <span
+              className={`text-xs font-medium transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-700'
+              }`}
+            >
+              必須站上MA5
+            </span>
+          </label>
+        </div>
+
+        <div>
+          <label className="flex items-center space-x-2 mb-2">
+            <input
+              type="checkbox"
+              checked={strategyParams.previousHighBreak}
+              onChange={(e) =>
+                setStrategyParams({
+                  ...strategyParams,
+                  previousHighBreak: e.target.checked,
+                })
+              }
+              className="form-checkbox h-4 w-4 text-blue-600"
+            />
+            <span
+              className={`text-xs font-medium transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-700'
+              }`}
+            >
+              突破前日高點
+            </span>
+          </label>
+        </div>
+
+        <div>
+          <label className="flex items-center space-x-2 mb-2">
+            <input
+              type="checkbox"
+              checked={strategyParams.volumeConfirm}
+              onChange={(e) =>
+                setStrategyParams({
+                  ...strategyParams,
+                  volumeConfirm: e.target.checked,
+                })
+              }
+              className="form-checkbox h-4 w-4 text-blue-600"
+            />
+            <span
+              className={`text-xs font-medium transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-700'
+              }`}
+            >
+              量能確認
+            </span>
+          </label>
+          {strategyParams.volumeConfirm && (
+            <input
+              type="number"
+              step="0.1"
+              min="1.0"
+              max="3.0"
+              className={`w-full px-2 py-1 text-sm border rounded focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+                isDarkMode
+                  ? 'bg-gray-700 border-gray-600 text-white'
+                  : 'bg-white border-gray-300 text-gray-900'
+              }`}
+              value={strategyParams.volumeThreshold}
+              onChange={(e) =>
+                setStrategyParams({
+                  ...strategyParams,
+                  volumeThreshold: Number(e.target.value),
+                })
+              }
+            />
+          )}
+        </div>
+      </div>
+
+      {/* 風控參數 */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div>
+          <label
+            className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+              isDarkMode ? 'text-gray-300' : 'text-gray-600'
+            }`}
+          >
+            停損(%)
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+              isDarkMode
+                ? 'bg-gray-700 border-gray-600 text-white'
+                : 'bg-white border-gray-300 text-gray-900'
+            }`}
+            value={strategyParams.stopLoss}
+            onChange={(e) =>
+              setStrategyParams({
+                ...strategyParams,
+                stopLoss: Number(e.target.value),
+              })
+            }
+          />
+        </div>
+
+        <div>
+          <label
+            className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+              isDarkMode ? 'text-gray-300' : 'text-gray-600'
+            }`}
+          >
+            停利(%)
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+              isDarkMode
+                ? 'bg-gray-700 border-gray-600 text-white'
+                : 'bg-white border-gray-300 text-gray-900'
+            }`}
+            value={strategyParams.stopProfit}
+            onChange={(e) =>
+              setStrategyParams({
+                ...strategyParams,
+                stopProfit: Number(e.target.value),
+              })
+            }
+          />
+        </div>
+
+        <div>
+          <label
+            className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+              isDarkMode ? 'text-gray-300' : 'text-gray-600'
+            }`}
+          >
+            最大倉位(%)
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0.01"
+            max="1.0"
+            className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+              isDarkMode
+                ? 'bg-gray-700 border-gray-600 text-white'
+                : 'bg-white border-gray-300 text-gray-900'
+            }`}
+            value={strategyParams.maxPositionSize}
+            onChange={(e) =>
+              setStrategyParams({
+                ...strategyParams,
+                maxPositionSize: Number(e.target.value),
+              })
+            }
+          />
+          <div
+            className={`text-xs mt-1 transition-colors duration-300 ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            }`}
+          >
+            {(strategyParams.maxPositionSize * 100).toFixed(0)}% 單檔上限
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

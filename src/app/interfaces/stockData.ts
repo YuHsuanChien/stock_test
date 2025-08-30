@@ -73,10 +73,59 @@ export interface BacktestResults {
     winRate: number;
     totalProfit: number;
   }[];
+  // 新增：高低點分析結果
+  highLowAnalysis?: {
+    [symbol: string]: HighLowAnalysis;
+  };
+  // 新增：圖表數據
+  chartData?: {
+    [symbol: string]: {
+      stockData: StockData[];
+      highLowPoints: HighLowPoint[];
+    };
+  };
 }
 
 export interface WStrategyParams {
   strategy: string;
+
+  // 底底高、頭頭高分析
+  enableHighLowAnalysis: boolean; // 啟用底底高、頭頭高分析
+  showHighLowChart: boolean; // 顯示標記圖表
+
+  // 基本進場條件（暫時保留，後續可擴展）
+  ma5Breakthrough: boolean; // 必須站上MA5
+  previousHighBreak: boolean; // 必須突破前日高點
+  volumeConfirm: boolean; // 是否需要量能確認
+  volumeThreshold: number; // 量能倍數 (預設1.2倍)
+
+  // 出場條件
+  stopLoss: number; // 停損比例 (預設5-8%)
+  stopProfit: number; // 停利比例 (預設12-20%)
+
+  // 其他條件
+  maxPositionSize: number; // 最大倉位 (預設20%)
+}
+
+// 2. 高低點標記數據結構
+export interface HighLowPoint {
+  date: Date;
+  price: number;
+  type: 'HIGH' | 'LOW';
+  index: number; // 在序列中的索引
+  cycleStart: Date; // 週期開始日期
+  cycleEnd: Date; // 週期結束日期
+  confirmed: boolean; // 是否已確認
+}
+
+// 3. 底底高、頭頭高分析結果
+export interface HighLowAnalysis {
+  highs: HighLowPoint[]; // 所有高點
+  lows: HighLowPoint[]; // 所有低點
+  isHigherHighs: boolean; // 是否符合頭頭高
+  isHigherLows: boolean; // 是否符合底底高
+  trendConfirmed: boolean; // 趨勢確認（兩者都成立）
+  lastAnalysisDate: Date; // 最後分析日期
 }
 
 export interface RsiStrategyParams {
