@@ -17,6 +17,16 @@ interface HighLowChartProps {
   isDarkMode?: boolean;
 }
 
+// 定義 CustomDot 的 props 型別
+interface CustomDotProps {
+  cx?: number;
+  cy?: number;
+  payload: {
+    date: string | Date;
+    [key: string]: unknown;
+  };
+}
+
 const HighLowChart: React.FC<HighLowChartProps> = ({
   stockData,
   highLowPoints,
@@ -24,7 +34,7 @@ const HighLowChart: React.FC<HighLowChartProps> = ({
   isDarkMode = false,
 }) => {
   // 自定義標記點
-  const CustomDot = ({ cx, cy, payload }: any) => {
+  const CustomDot = ({ cx, cy, payload }: CustomDotProps) => {
     const point = highLowPoints.find(
       (p) => p.date.toDateString() === new Date(payload.date).toDateString(),
     );
@@ -33,32 +43,47 @@ const HighLowChart: React.FC<HighLowChartProps> = ({
     const isHigh = point.type === 'HIGH';
     const color = isHigh ? '#2ed573' : '#ff4757';
 
+    // 🔧 新增：區分確認和未確認的點
+    const isConfirmed = point.confirmed;
+    const strokeStyle = isConfirmed ? 'solid' : 'dashed';
+    const strokeWidth = isConfirmed ? 2 : 1;
+
     return (
       <g>
+        {/* 🔧 修改：根據確認狀態調整樣式 */}
         <circle
           cx={cx}
           cy={cy}
-          r={6}
+          r={isConfirmed ? 6 : 4}
           fill={color}
           stroke="white"
-          strokeWidth={2}
+          strokeWidth={strokeWidth}
+          strokeDasharray={isConfirmed ? 'none' : '2,2'}
+          opacity={isConfirmed ? 1 : 0.7}
         />
+
+        {/* 🔧 修改：標籤樣式 */}
         <text
           x={cx}
           y={cy + (isHigh ? -15 : 25)}
           textAnchor="middle"
           fill={color}
-          fontSize={10}
-          fontWeight="bold"
+          fontSize={isConfirmed ? 10 : 8}
+          fontWeight={isConfirmed ? 'bold' : 'normal'}
+          opacity={isConfirmed ? 1 : 0.8}
         >
           {isHigh ? '高' : '底'}
+          {!isConfirmed ? '?' : ''}
         </text>
+
+        {/* 價格標籤 */}
         <text
           x={cx}
           y={cy + (isHigh ? -30 : 40)}
           textAnchor="middle"
           fill={color}
           fontSize={8}
+          opacity={isConfirmed ? 1 : 0.7}
         >
           {point.price.toFixed(2)}
         </text>

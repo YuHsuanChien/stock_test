@@ -124,7 +124,11 @@ export const runBacktestOnServer = async (
 
     if (result.statusCode === 200) {
       console.log('✅ 後端回測執行成功');
-      return result.data;
+
+      // 🔧 修復：轉換日期字符串為 Date 對象
+      const convertedResult = convertDatesToDateObjects(result.data);
+
+      return convertedResult;
     } else {
       throw new Error(result.message || '回測執行失敗');
     }
@@ -134,6 +138,88 @@ export const runBacktestOnServer = async (
   }
 };
 
+// 🔧 新增：日期轉換函數
+function convertDatesToDateObjects(data: any): BacktestResults {
+  // 轉換 detailedTrades 中的日期
+  if (data.detailedTrades) {
+    data.detailedTrades = data.detailedTrades.map((trade: any) => ({
+      ...trade,
+      date: trade.date ? new Date(trade.date) : trade.date,
+      buySignalDate: trade.buySignalDate
+        ? new Date(trade.buySignalDate)
+        : trade.buySignalDate,
+      sellSignalDate: trade.sellSignalDate
+        ? new Date(trade.sellSignalDate)
+        : trade.sellSignalDate,
+      actualBuyDate: trade.actualBuyDate
+        ? new Date(trade.actualBuyDate)
+        : trade.actualBuyDate,
+      actualSellDate: trade.actualSellDate
+        ? new Date(trade.actualSellDate)
+        : trade.actualSellDate,
+      entryDate: trade.entryDate ? new Date(trade.entryDate) : trade.entryDate,
+    }));
+  }
+
+  // 🔧 轉換 highLowAnalysis 中的日期（W 策略專用）
+  if (data.highLowAnalysis) {
+    Object.keys(data.highLowAnalysis).forEach((symbol) => {
+      const analysis = data.highLowAnalysis[symbol];
+
+      // 轉換 highs 中的日期
+      if (analysis.highs) {
+        analysis.highs = analysis.highs.map((high: any) => ({
+          ...high,
+          date: new Date(high.date),
+          cycleStart: new Date(high.cycleStart),
+          cycleEnd: new Date(high.cycleEnd),
+        }));
+      }
+
+      // 轉換 lows 中的日期
+      if (analysis.lows) {
+        analysis.lows = analysis.lows.map((low: any) => ({
+          ...low,
+          date: new Date(low.date),
+          cycleStart: new Date(low.cycleStart),
+          cycleEnd: new Date(low.cycleEnd),
+        }));
+      }
+
+      // 轉換 lastAnalysisDate
+      if (analysis.lastAnalysisDate) {
+        analysis.lastAnalysisDate = new Date(analysis.lastAnalysisDate);
+      }
+    });
+  }
+
+  // 🔧 轉換 chartData 中的日期（W 策略專用）
+  if (data.chartData) {
+    Object.keys(data.chartData).forEach((symbol) => {
+      const chartData = data.chartData[symbol];
+
+      // 轉換 stockData 中的日期
+      if (chartData.stockData) {
+        chartData.stockData = chartData.stockData.map((item: any) => ({
+          ...item,
+          date: new Date(item.date),
+        }));
+      }
+
+      // 轉換 highLowPoints 中的日期
+      if (chartData.highLowPoints) {
+        chartData.highLowPoints = chartData.highLowPoints.map((point: any) => ({
+          ...point,
+          date: new Date(point.date),
+          cycleStart: new Date(point.cycleStart),
+          cycleEnd: new Date(point.cycleEnd),
+        }));
+      }
+    });
+  }
+
+  return data as BacktestResults;
+}
 /**
  * 向nest.js獲取所有股票清單
  * @returns 股票代號陣列
