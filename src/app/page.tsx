@@ -45,6 +45,7 @@ import { runFullBacktest } from './services/runFullBacktest';
 import W_Strategy from './components/w_strategy';
 import RSI_MACD_Strategy from './components/rsi_macd_strategy';
 import HighLowChart from './components/HightLowChart';
+import ProfessionalKLineChart from './components/ProfessionalKLineChart';
 
 const BacktestSystem = () => {
   // 暗亮模式狀態
@@ -647,7 +648,7 @@ const BacktestSystem = () => {
 
       {results && results.chartData && selectedStrategy === 'W_Strategy' && (
         <div
-          className={`rounded-lg shadow-lg p-6 transition-colors duration-300 ${
+          className={`rounded-lg shadow-lg p-6 mb-6 transition-colors duration-300 ${
             isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
           }`}
         >
@@ -722,10 +723,10 @@ const BacktestSystem = () => {
             )}
           </div>
 
-          {/* 個股圖表 */}
+          {/* 🔥 替換為專業K線圖 */}
           <div className="space-y-6">
             {Object.entries(results.chartData).map(([symbol, data]) => (
-              <HighLowChart
+              <ProfessionalKLineChart
                 key={symbol}
                 stockData={data.stockData}
                 highLowPoints={data.highLowPoints}
