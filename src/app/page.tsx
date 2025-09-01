@@ -98,6 +98,8 @@ const BacktestSystem = () => {
     previousHighBreak: false, // 不需要此條件
     volumeConfirm: true, // 預設啟用量能確認
     volumeThreshold: 1.2,
+    ma20UpTrend: false, // 預設關閉20線向上條件
+    bullishAlignment: false, // 預設關閉多頭排列條件
     stopProfit: 0.15, // 15%
     maxPositionSize: 0.2, // 20%
 
@@ -139,7 +141,7 @@ const BacktestSystem = () => {
       priceMomentumThreshold: 0.03, // Python: 3%動能門檻 (提高精準度)
 
       // 低優先級參數 (MA60季線)
-      enableMA60: false, // Python預設不啟用，但可選擇開啟
+      enableMA10: false, // Python預設不啟用，但可選擇開啟
 
       // 新增：Python風格優化參數
       maxTotalExposure: 0.75, // Python: 最大總曝險度75%

@@ -265,7 +265,15 @@ export default function W_Strategy({
                 <strong>2. 買點確認：</strong>當日突破5日線，並且是上漲的
               </div>
               <div>
-                <strong>3. 交易量確認：</strong>
+                <strong>3. 20線向上確認：</strong>
+                MA20連續3天向上且5日斜率大於0.01%(可選)
+              </div>
+              <div>
+                <strong>4. 多頭排列確認：</strong>
+                5日線 &gt; 10日線 &gt; 20日線(可選)
+              </div>
+              <div>
+                <strong>5. 交易量確認：</strong>
                 當日交易量要大於前一個交易日的交易量(可調倍數)
               </div>
             </div>
@@ -322,6 +330,68 @@ export default function W_Strategy({
               />
             </div>
           )}
+        </div>
+
+        {/* 20線向上確認 */}
+        <div>
+          <label className="flex items-center space-x-2 mb-2">
+            <input
+              type="checkbox"
+              checked={strategyParams.ma20UpTrend}
+              onChange={(e) =>
+                setStrategyParams({
+                  ...strategyParams,
+                  ma20UpTrend: e.target.checked,
+                })
+              }
+              className="form-checkbox h-4 w-4 text-green-600"
+            />
+            <span
+              className={`text-xs font-medium transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-700'
+              }`}
+            >
+              20線向上
+            </span>
+          </label>
+          <div
+            className={`text-xs transition-colors duration-300 ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            }`}
+          >
+            要求MA20連續3天向上且5日斜率&gt;0.01%
+          </div>
+        </div>
+
+        {/* 多頭排列確認 */}
+        <div>
+          <label className="flex items-center space-x-2 mb-2">
+            <input
+              type="checkbox"
+              checked={strategyParams.bullishAlignment}
+              onChange={(e) =>
+                setStrategyParams({
+                  ...strategyParams,
+                  bullishAlignment: e.target.checked,
+                })
+              }
+              className="form-checkbox h-4 w-4 text-green-600"
+            />
+            <span
+              className={`text-xs font-medium transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-700'
+              }`}
+            >
+              多頭排列
+            </span>
+          </label>
+          <div
+            className={`text-xs transition-colors duration-300 ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            }`}
+          >
+            要求 5日線 &gt; 10日線 &gt; 20日線
+          </div>
         </div>
       </div>
 

@@ -614,20 +614,20 @@ export default function RSI_MACD_Strategy({
               <label className="flex items-center space-x-2">
                 <input
                   type="checkbox"
-                  checked={strategyParams.enableMA60}
+                  checked={strategyParams.enableMA10}
                   onChange={(e) =>
                     setStrategyParams({
                       ...strategyParams,
-                      enableMA60: e.target.checked,
+                      enableMA10: e.target.checked,
                     })
                   }
                   className="form-checkbox h-4 w-4 text-gray-600"
                 />
                 <span className="text-xs font-medium text-gray-700">
-                  MA60季線確認
+                  MA10中線確認
                 </span>
               </label>
-              <div className="text-xs text-gray-500 mt-1">長期趨勢過濾</div>
+              <div className="text-xs text-gray-500 mt-1">中期趨勢過濾</div>
             </div>
           </div>
         </div>

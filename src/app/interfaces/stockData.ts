@@ -13,7 +13,7 @@ export interface StockData {
   macdHistogram?: number;
   ma20?: number;
   ma5?: number;
-  ma60?: number; // 新增MA60季線
+  ma10?: number; // 新增MA10中線
   volumeMA20?: number;
   volumeRatio?: number;
   atr?: number; // 新增ATR指標
@@ -100,6 +100,8 @@ export interface WStrategyParams {
   previousHighBreak: boolean; // 必須突破前日高點
   volumeConfirm: boolean; // 是否需要量能確認
   volumeThreshold: number; // 量能倍數 (預設1.2倍)
+  ma20UpTrend: boolean; // 20線向上條件
+  bullishAlignment: boolean; // 多頭排列條件 (5日>20日>60日)
 
   // 風控參數
   stopProfit: number; // 停利比例 (預設15%)
@@ -178,7 +180,7 @@ export interface RsiStrategyParams {
   priceMomentumPeriod: number; // 價格動能計算週期
   priceMomentumThreshold: number; // 價格動能門檻
   // 低優先級新增參數
-  enableMA60: boolean; // 是否啟用MA60季線確認
+  enableMA10: boolean; // 是否啟用MA10中線確認
   // 新增：Python風格優化參數
   maxTotalExposure: number; // 最大總曝險度 (Python風格)
   usePythonLogic: boolean; // 啟用Python決策邏輯
