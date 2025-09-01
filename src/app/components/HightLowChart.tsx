@@ -45,7 +45,6 @@ const HighLowChart: React.FC<HighLowChartProps> = ({
 
     // 🔧 新增：區分確認和未確認的點
     const isConfirmed = point.confirmed;
-    const strokeStyle = isConfirmed ? 'solid' : 'dashed';
     const strokeWidth = isConfirmed ? 2 : 1;
 
     return (
@@ -138,7 +137,7 @@ const HighLowChart: React.FC<HighLowChartProps> = ({
               dataKey="close"
               stroke="#3742fa"
               strokeWidth={2}
-              dot={<CustomDot />}
+              dot={(props: CustomDotProps) => <CustomDot {...props} />}
               name="收盤價"
             />
 

@@ -44,8 +44,7 @@ import { runBacktest } from './services/runBacktest';
 import { runFullBacktest } from './services/runFullBacktest';
 import W_Strategy from './components/w_strategy';
 import RSI_MACD_Strategy from './components/rsi_macd_strategy';
-import HighLowChart from './components/HightLowChart';
-import ProfessionalKLineChart from './components/ProfessionalKLineChart';
+import StockResultsList from './components/StockResultsList';
 
 const BacktestSystem = () => {
   // 暗亮模式狀態
@@ -80,6 +79,12 @@ const BacktestSystem = () => {
       setIsDarkMode(prefersDark);
     }
   }, []);
+
+  React.useEffect(() => {
+    if (results && results.chartData && selectedStrategy === 'W_Strategy') {
+      console.log('results.chartData', results.chartData);
+    }
+  }, [results, selectedStrategy]);
 
   const [W_StrategyParams, setW_StrategyParams] = useState<WStrategyParams>({
     strategy: 'w_strategy',
@@ -646,96 +651,9 @@ const BacktestSystem = () => {
         </div>
       </div>
 
-      {results && results.chartData && selectedStrategy === 'W_Strategy' && (
-        <div
-          className={`rounded-lg shadow-lg p-6 mb-6 transition-colors duration-300 ${
-            isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
-          }`}
-        >
-          <h3
-            className={`text-xl font-bold mb-4 transition-colors duration-300 ${
-              isDarkMode ? 'text-white' : 'text-gray-800'
-            }`}
-          >
-            📊 底底高、頭頭高分析結果
-          </h3>
-
-          {/* 整體分析摘要 */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            {Object.entries(results.highLowAnalysis || {}).map(
-              ([symbol, analysis]) => (
-                <div
-                  key={symbol}
-                  className={`p-4 rounded-lg border transition-colors duration-300 ${
-                    analysis.trendConfirmed
-                      ? isDarkMode
-                        ? 'bg-green-900/30 border-green-700'
-                        : 'bg-green-50 border-green-200'
-                      : isDarkMode
-                      ? 'bg-gray-700/50 border-gray-600'
-                      : 'bg-gray-50 border-gray-300'
-                  }`}
-                >
-                  <h4
-                    className={`font-bold mb-2 ${
-                      analysis.trendConfirmed
-                        ? 'text-green-600'
-                        : isDarkMode
-                        ? 'text-gray-300'
-                        : 'text-gray-600'
-                    }`}
-                  >
-                    {symbol}
-                  </h4>
-                  <div className="text-sm space-y-1">
-                    <div>高點數: {analysis.highs.length}</div>
-                    <div>底點數: {analysis.lows.length}</div>
-                    <div
-                      className={`font-semibold ${
-                        analysis.isHigherHighs
-                          ? 'text-green-600'
-                          : 'text-red-600'
-                      }`}
-                    >
-                      頭頭高: {analysis.isHigherHighs ? '✅' : '❌'}
-                    </div>
-                    <div
-                      className={`font-semibold ${
-                        analysis.isHigherLows
-                          ? 'text-green-600'
-                          : 'text-red-600'
-                      }`}
-                    >
-                      底底高: {analysis.isHigherLows ? '✅' : '❌'}
-                    </div>
-                    <div
-                      className={`font-bold ${
-                        analysis.trendConfirmed
-                          ? 'text-green-600'
-                          : 'text-red-600'
-                      }`}
-                    >
-                      趨勢: {analysis.trendConfirmed ? '🎯確認' : '❌未確認'}
-                    </div>
-                  </div>
-                </div>
-              ),
-            )}
-          </div>
-
-          {/* 🔥 替換為專業K線圖 */}
-          <div className="space-y-6">
-            {Object.entries(results.chartData).map(([symbol, data]) => (
-              <ProfessionalKLineChart
-                key={symbol}
-                stockData={data.stockData}
-                highLowPoints={data.highLowPoints}
-                symbol={symbol}
-                isDarkMode={isDarkMode}
-              />
-            ))}
-          </div>
-        </div>
+      {/* 股票回測結果清單 - 替換原來的圖表顯示 */}
+      {results && (results.chartData || results.stockPerformance) && (
+        <StockResultsList results={results} isDarkMode={isDarkMode} />
       )}
 
       {results && (
