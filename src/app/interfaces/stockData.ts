@@ -82,6 +82,8 @@ export interface BacktestResults {
     [symbol: string]: {
       stockData: StockData[];
       highLowPoints: HighLowPoint[];
+      buyPoints?: BuyPoint[]; // 新增買點數據
+      sellPoints?: SellPoint[]; // 新增賣點數據
     };
   };
 }
@@ -99,12 +101,14 @@ export interface WStrategyParams {
   volumeConfirm: boolean; // 是否需要量能確認
   volumeThreshold: number; // 量能倍數 (預設1.2倍)
 
-  // 出場條件
-  stopLoss: number; // 停損比例 (預設5-8%)
-  stopProfit: number; // 停利比例 (預設12-20%)
-
-  // 其他條件
+  // 風控參數
+  stopProfit: number; // 停利比例 (預設15%)
   maxPositionSize: number; // 最大倉位 (預設20%)
+  // 注意：W策略停損機制為跌破買入訊號日開盤價
+
+  // 新增：回後買上漲策略
+  enableBuyUpTrend: boolean; // 啟用回後買上漲策略
+  showBuyPoints: boolean; // 顯示買點標記
 }
 
 // 2. 高低點標記數據結構
@@ -116,6 +120,26 @@ export interface HighLowPoint {
   cycleStart: Date; // 週期開始日期
   cycleEnd: Date; // 週期結束日期
   confirmed: boolean; // 是否已確認
+}
+
+// 新增：買點標記數據結構
+export interface BuyPoint {
+  date: Date;
+  price: number;
+  index: number;
+  reason: string;
+  confirmed: boolean;
+}
+
+// 新增：賣點標記數據結構
+export interface SellPoint {
+  date: Date;
+  price: number;
+  index: number;
+  reason: string;
+  profit?: number;
+  profitRate?: number;
+  holdingDays?: number;
 }
 
 // 3. 底底高、頭頭高分析結果

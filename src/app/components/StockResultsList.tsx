@@ -387,6 +387,8 @@ const StockResultsList: React.FC<StockResultsListProps> = ({
             stockSymbol={selectedStock}
             stockData={results.chartData[selectedStock].stockData}
             highLowPoints={results.chartData[selectedStock].highLowPoints}
+            buyPoints={results.chartData[selectedStock].buyPoints}
+            sellPoints={results.chartData[selectedStock].sellPoints}
             stockPerformance={results.stockPerformance?.find(
               (s) => s.stock === selectedStock,
             )}

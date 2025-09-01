@@ -215,6 +215,22 @@ function convertDatesToDateObjects(data: any): BacktestResults {
           cycleEnd: new Date(point.cycleEnd),
         }));
       }
+
+      // 🔧 新增：轉換 buyPoints 中的日期
+      if (chartData.buyPoints) {
+        chartData.buyPoints = chartData.buyPoints.map((point: any) => ({
+          ...point,
+          date: new Date(point.date),
+        }));
+      }
+
+      // 🔧 新增：轉換 sellPoints 中的日期
+      if (chartData.sellPoints) {
+        chartData.sellPoints = chartData.sellPoints.map((point: any) => ({
+          ...point,
+          date: new Date(point.date),
+        }));
+      }
     });
   }
 

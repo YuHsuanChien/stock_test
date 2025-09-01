@@ -93,14 +93,17 @@ const BacktestSystem = () => {
     enableHighLowAnalysis: true, // 預設啟用
     showHighLowChart: true, // 預設顯示圖表
 
-    // 基本條件
+    // 基本條件（保留但不在UI顯示，已內建在後端邏輯中）
     ma5Breakthrough: true,
-    previousHighBreak: true,
-    volumeConfirm: false,
+    previousHighBreak: false, // 不需要此條件
+    volumeConfirm: true, // 預設啟用量能確認
     volumeThreshold: 1.2,
-    stopLoss: 0.08, // 8%
     stopProfit: 0.15, // 15%
     maxPositionSize: 0.2, // 20%
+
+    // 新增：回後買上漲策略
+    enableBuyUpTrend: true, // 預設啟用
+    showBuyPoints: true, // 預設顯示買點標記
   });
 
   const [rsiStrategyParams, setRsiStrategyParams] = useState<RsiStrategyParams>(

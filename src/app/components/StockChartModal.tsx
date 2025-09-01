@@ -7,6 +7,8 @@ import {
   StockData,
   HighLowPoint,
   HighLowAnalysis,
+  BuyPoint,
+  SellPoint,
 } from '../interfaces/stockData';
 
 interface StockChartModalProps {
@@ -15,6 +17,8 @@ interface StockChartModalProps {
   stockSymbol: string;
   stockData: StockData[];
   highLowPoints: HighLowPoint[];
+  buyPoints?: BuyPoint[]; // 新增買點數據
+  sellPoints?: SellPoint[]; // 新增賣點數據
   stockPerformance?: {
     stock: string;
     trades: number;
@@ -31,6 +35,8 @@ const StockChartModal: React.FC<StockChartModalProps> = ({
   stockSymbol,
   stockData,
   highLowPoints,
+  buyPoints = [], // 新增買點數據
+  sellPoints = [], // 新增賣點數據
   stockPerformance,
   highLowAnalysis,
   isDarkMode = false,
@@ -187,6 +193,8 @@ const StockChartModal: React.FC<StockChartModalProps> = ({
                 <EChartsProfessionalKLineChart
                   stockData={stockData}
                   highLowPoints={highLowPoints}
+                  buyPoints={buyPoints}
+                  sellPoints={sellPoints}
                   symbol={stockSymbol}
                   isDarkMode={isDarkMode}
                 />

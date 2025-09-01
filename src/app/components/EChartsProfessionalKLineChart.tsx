@@ -3,23 +3,45 @@
 
 import React, { useState, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { StockData, HighLowPoint } from '../interfaces/stockData';
+import {
+  StockData,
+  HighLowPoint,
+  BuyPoint,
+  SellPoint,
+} from '../interfaces/stockData';
 
 interface EChartsProfessionalKLineChartProps {
   stockData: StockData[];
   highLowPoints: HighLowPoint[];
+  buyPoints?: BuyPoint[]; // 新增買點數據
+  sellPoints?: SellPoint[]; // 新增賣點數據
   symbol: string;
   isDarkMode?: boolean;
 }
 
 const EChartsProfessionalKLineChart: React.FC<
   EChartsProfessionalKLineChartProps
-> = ({ stockData, highLowPoints, symbol, isDarkMode = false }) => {
-  const [isFullscreen, setIsFullscreen] = useState(false);
+> = ({
+  stockData,
+  highLowPoints,
+  buyPoints = [],
+  sellPoints = [],
+  symbol,
+  isDarkMode = false,
+}) => {
+  const [isFullscreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // 使用 useMemo 優化數據處理
   const chartOption = useMemo(() => {
+    console.log('🔧 ECharts圖表重新渲染:', {
+      stockDataLength: stockData?.length || 0,
+      highLowPointsLength: highLowPoints?.length || 0,
+      buyPointsLength: buyPoints?.length || 0,
+      sellPointsLength: sellPoints?.length || 0,
+      symbol,
+    });
+
     if (!stockData || stockData.length === 0) {
       setError('等待股票數據載入...');
       return null;
@@ -59,7 +81,6 @@ const EChartsProfessionalKLineChart: React.FC<
       const minPrice = Math.min(...allPrices);
       const maxPrice = Math.max(...allPrices);
       const priceRange = maxPrice - minPrice;
-      const pricePadding = priceRange * 0.1;
 
       // 根據價格範圍動態計算標記偏移量（約為價格範圍的0.4%）
       const markingOffset = priceRange * 0.004;
@@ -90,6 +111,66 @@ const EChartsProfessionalKLineChart: React.FC<
           symbolRotate: point.type === 'HIGH' ? 0 : 180,
         };
       });
+
+      // 準備買點標記
+      const buyPointMarkings = (buyPoints || []).map((point) => {
+        const date =
+          typeof point.date === 'string' ? new Date(point.date) : point.date;
+        const dateStr = date.toISOString().split('T')[0];
+        const dateIndex = dates.indexOf(dateStr);
+
+        console.log(
+          `🎯 處理買點標記: ${dateStr}, 索引: ${dateIndex}, 價格: ${point.price}`,
+        );
+
+        return {
+          name: `買點${point.confirmed ? '' : '(待確認)'}`,
+          coord: [dateIndex, point.price + markingOffset * 5],
+          value: `${point.price.toFixed(2)}`,
+          itemStyle: {
+            color: '#FFFF37', // 橘色
+          },
+          symbol: 'triangle',
+          symbolSize: point.confirmed ? 20 : 15, // 調小三角形
+          symbolRotate: 180,
+        };
+      });
+
+      // 準備賣點標記
+      const sellPointMarkings = (sellPoints || []).map((point) => {
+        const date =
+          typeof point.date === 'string' ? new Date(point.date) : point.date;
+        const dateStr = date.toISOString().split('T')[0];
+        const dateIndex = dates.indexOf(dateStr);
+
+        console.log(
+          `💰 處理賣點標記: ${dateStr}, 索引: ${dateIndex}, 價格: ${point.price}`,
+        );
+
+        const profitColor =
+          (point.profitRate || 0) >= 0 ? '#00FF00' : '#FF0000'; // 綠色獲利，紅色虧損
+
+        return {
+          name: `賣點 ${
+            point.profitRate ? `(${(point.profitRate * 100).toFixed(1)}%)` : ''
+          }`,
+          coord: [dateIndex, point.price - markingOffset * 5],
+          value: `${point.price.toFixed(2)}`,
+          itemStyle: {
+            color: profitColor,
+          },
+          symbol: 'triangle',
+          symbolSize: 20,
+          symbolRotate: 0, // 正向三角形（向上）
+        };
+      });
+
+      // 合併所有標記
+      const allMarkings = [
+        ...highLowMarkings,
+        ...buyPointMarkings,
+        ...sellPointMarkings,
+      ];
 
       // ECharts 配置選項
       return {
@@ -301,7 +382,7 @@ const EChartsProfessionalKLineChart: React.FC<
               borderColor0: '#26a69a', // 下跌邊框改為綠色
             },
             markPoint: {
-              data: highLowMarkings,
+              data: allMarkings,
             },
           },
           {
@@ -367,7 +448,7 @@ const EChartsProfessionalKLineChart: React.FC<
       );
       return null;
     }
-  }, [stockData, highLowPoints, symbol, isDarkMode]);
+  }, [stockData, highLowPoints, buyPoints, sellPoints, symbol, isDarkMode]);
 
   // 錯誤狀態
   if (error) {
