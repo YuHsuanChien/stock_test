@@ -106,6 +106,9 @@ const BacktestSystem = () => {
     // 新增：回後買上漲策略
     enableBuyUpTrend: true, // 預設啟用
     showBuyPoints: true, // 預設顯示買點標記
+
+    // 新增：MA5跌破賣出功能
+    enableMA5SellSignal: false, // 預設關閉，讓用戶決定是否啟用
   });
 
   const [rsiStrategyParams, setRsiStrategyParams] = useState<RsiStrategyParams>(

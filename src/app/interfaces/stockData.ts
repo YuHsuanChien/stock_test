@@ -111,6 +111,9 @@ export interface WStrategyParams {
   // 新增：回後買上漲策略
   enableBuyUpTrend: boolean; // 啟用回後買上漲策略
   showBuyPoints: boolean; // 顯示買點標記
+
+  // 新增：MA5跌破賣出功能
+  enableMA5SellSignal: boolean; // 啟用跌破MA5賣出訊號
 }
 
 // 2. 高低點標記數據結構

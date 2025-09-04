@@ -395,6 +395,78 @@ export default function W_Strategy({
         </div>
       </div>
 
+      {/* 賣出策略設定 */}
+      <div className="mb-4">
+        <h4
+          className={`text-sm font-semibold mb-3 transition-colors duration-300 ${
+            isDarkMode ? 'text-red-400' : 'text-red-700'
+          }`}
+        >
+          📉 賣出策略設定
+        </h4>
+
+        <div>
+          <label className="flex items-center space-x-2 mb-2">
+            <input
+              type="checkbox"
+              checked={strategyParams.enableMA5SellSignal}
+              onChange={(e) =>
+                setStrategyParams({
+                  ...strategyParams,
+                  enableMA5SellSignal: e.target.checked,
+                })
+              }
+              className="form-checkbox h-4 w-4 text-red-600"
+            />
+            <span
+              className={`text-xs font-medium transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-700'
+              }`}
+            >
+              啟用MA5跌破賣出訊號
+            </span>
+          </label>
+          <div
+            className={`text-xs transition-colors duration-300 ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            }`}
+          >
+            當收盤價跌破5日線時立即發出賣出訊號（優先於開盤價停損）
+          </div>
+
+          {/* MA5賣出說明 */}
+          {strategyParams.enableMA5SellSignal && (
+            <div
+              className={`mt-3 p-3 rounded border transition-colors duration-300 ${
+                isDarkMode
+                  ? 'bg-red-800/20 border-red-600'
+                  : 'bg-red-50 border-red-200'
+              }`}
+            >
+              <div
+                className={`text-xs transition-colors duration-300 ${
+                  isDarkMode ? 'text-red-200' : 'text-red-700'
+                }`}
+              >
+                <div className="font-medium mb-1">💡 MA5賣出訊號說明：</div>
+                <div className="space-y-1">
+                  <div>• 優先級：MA5跌破 &gt; 開盤價停損</div>
+                  <div>• 觸發條件：當日收盤價 &lt; 5日移動平均線</div>
+                  <div>• 執行方式：次日開盤價賣出</div>
+                  <div>• 適用場景：及早發現趨勢轉弱訊號</div>
+                  <div className="mt-2 pt-2 border-t border-red-300">
+                    <div className="font-medium text-orange-600">
+                      ⚠️ 重要提醒：
+                    </div>
+                    <div>啟用後將停用百分比停利機制，改由MA5控制賣出時機</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 風控參數 */}
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">
@@ -412,31 +484,50 @@ export default function W_Strategy({
           </div>
         </div>
 
-        <div>
-          <label
-            className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
-              isDarkMode ? 'text-gray-300' : 'text-gray-600'
-            }`}
-          >
-            停利(%)
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
-              isDarkMode
-                ? 'bg-gray-700 border-gray-600 text-white'
-                : 'bg-white border-gray-300 text-gray-900'
-            }`}
-            value={strategyParams.stopProfit}
-            onChange={(e) =>
-              setStrategyParams({
-                ...strategyParams,
-                stopProfit: Number(e.target.value),
-              })
-            }
-          />
-        </div>
+        {/* 停利參數 - 只在未啟用MA5賣出時顯示 */}
+        {!strategyParams.enableMA5SellSignal && (
+          <div>
+            <label
+              className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-600'
+              }`}
+            >
+              停利(%)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+                isDarkMode
+                  ? 'bg-gray-700 border-gray-600 text-white'
+                  : 'bg-white border-gray-300 text-gray-900'
+              }`}
+              value={strategyParams.stopProfit}
+              onChange={(e) =>
+                setStrategyParams({
+                  ...strategyParams,
+                  stopProfit: Number(e.target.value),
+                })
+              }
+            />
+          </div>
+        )}
+
+        {/* MA5賣出模式提示 */}
+        {strategyParams.enableMA5SellSignal && (
+          <div>
+            <div
+              className={`text-xs p-2 rounded border transition-colors duration-300 ${
+                isDarkMode
+                  ? 'bg-orange-900/30 border-orange-700 text-orange-300'
+                  : 'bg-orange-50 border-orange-200 text-orange-700'
+              }`}
+            >
+              <div className="font-medium mb-1">📉 MA5賣出模式</div>
+              <div>停利機制已停用，改由MA5控制賣出</div>
+            </div>
+          </div>
+        )}
 
         <div>
           <label
@@ -449,8 +540,6 @@ export default function W_Strategy({
           <input
             type="number"
             step="0.01"
-            min="0.01"
-            max="1.0"
             className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
               isDarkMode
                 ? 'bg-gray-700 border-gray-600 text-white'
@@ -464,13 +553,6 @@ export default function W_Strategy({
               })
             }
           />
-          <div
-            className={`text-xs mt-1 transition-colors duration-300 ${
-              isDarkMode ? 'text-gray-400' : 'text-gray-600'
-            }`}
-          >
-            {(strategyParams.maxPositionSize * 100).toFixed(0)}% 單檔上限
-          </div>
         </div>
       </div>
     </div>
