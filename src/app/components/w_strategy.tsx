@@ -554,6 +554,102 @@ export default function W_Strategy({
             }
           />
         </div>
+
+        {/* 新增：價格區間限制 */}
+        <div className="col-span-full">
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              className="form-checkbox h-4 w-4 text-blue-600 transition duration-150 ease-in-out"
+              checked={strategyParams.enablePriceRangeFilter}
+              onChange={(e) =>
+                setStrategyParams({
+                  ...strategyParams,
+                  enablePriceRangeFilter: e.target.checked,
+                })
+              }
+            />
+            <span
+              className={`text-xs font-medium transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-600'
+              }`}
+            >
+              啟用價格區間限制
+            </span>
+          </label>
+
+          {strategyParams.enablePriceRangeFilter && (
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <label
+                  className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  最低價格
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  placeholder="不限制"
+                  className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+                    isDarkMode
+                      ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                      : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                  }`}
+                  value={strategyParams.minPrice || ''}
+                  onChange={(e) =>
+                    setStrategyParams({
+                      ...strategyParams,
+                      minPrice: e.target.value
+                        ? Number(e.target.value)
+                        : undefined,
+                    })
+                  }
+                />
+              </div>
+
+              <div>
+                <label
+                  className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                  }`}
+                >
+                  最高價格
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  placeholder="不限制"
+                  className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+                    isDarkMode
+                      ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                      : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                  }`}
+                  value={strategyParams.maxPrice || ''}
+                  onChange={(e) =>
+                    setStrategyParams({
+                      ...strategyParams,
+                      maxPrice: e.target.value
+                        ? Number(e.target.value)
+                        : undefined,
+                    })
+                  }
+                />
+              </div>
+            </div>
+          )}
+
+          <div
+            className={`mt-2 text-xs transition-colors duration-300 ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            }`}
+          >
+            啟用後，只有股價在指定區間內的買點訊號才會被採用
+          </div>
+        </div>
       </div>
     </div>
   );

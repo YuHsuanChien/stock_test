@@ -109,6 +109,11 @@ const BacktestSystem = () => {
 
     // 新增：MA5跌破賣出功能
     enableMA5SellSignal: false, // 預設關閉，讓用戶決定是否啟用
+
+    // 新增：價格區間限制功能
+    enablePriceRangeFilter: false, // 預設關閉
+    minPrice: undefined, // 未設定
+    maxPrice: undefined, // 未設定
   });
 
   const [rsiStrategyParams, setRsiStrategyParams] = useState<RsiStrategyParams>(

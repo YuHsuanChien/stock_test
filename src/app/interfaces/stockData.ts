@@ -114,6 +114,11 @@ export interface WStrategyParams {
 
   // 新增：MA5跌破賣出功能
   enableMA5SellSignal: boolean; // 啟用跌破MA5賣出訊號
+
+  // 新增：價格區間限制功能
+  enablePriceRangeFilter: boolean; // 啟用價格區間過濾
+  minPrice?: number; // 最低價格限制
+  maxPrice?: number; // 最高價格限制
 }
 
 // 2. 高低點標記數據結構
