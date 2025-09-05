@@ -19,14 +19,12 @@ interface BacktestRequest {
   stocks: string[];
   startDate: string;
   endDate: string;
-  initialCapital: number;
   strategyParams?: RsiStrategyParams | WStrategyParams;
 }
 
-// 回測結果介面 - 與前端保持一致
+// 回測結果介面 - 與後端保持一致
 interface BacktestResults {
   performance: {
-    initialCapital: number;
     finalCapital: number;
     totalReturn: number;
     annualReturn: number;
@@ -94,7 +92,6 @@ export const runBacktestOnServer = async (
   stocks: string[],
   startDate: string,
   endDate: string,
-  initialCapital: number,
   strategyParams: RsiStrategyParams | WStrategyParams,
 ): Promise<BacktestResults> => {
   console.log('🔥 開始執行後端回測...');
@@ -104,7 +101,6 @@ export const runBacktestOnServer = async (
       stocks,
       startDate,
       endDate,
-      initialCapital,
       strategyParams,
     };
 
@@ -139,102 +135,132 @@ export const runBacktestOnServer = async (
 };
 
 // 🔧 新增：日期轉換函數
-function convertDatesToDateObjects(data: any): BacktestResults {
+function convertDatesToDateObjects(data: unknown): BacktestResults {
+  const result = data as Record<string, unknown>;
+
   // 轉換 detailedTrades 中的日期
-  if (data.detailedTrades) {
-    data.detailedTrades = data.detailedTrades.map((trade: any) => ({
-      ...trade,
-      date: trade.date ? new Date(trade.date) : trade.date,
-      buySignalDate: trade.buySignalDate
-        ? new Date(trade.buySignalDate)
-        : trade.buySignalDate,
-      sellSignalDate: trade.sellSignalDate
-        ? new Date(trade.sellSignalDate)
-        : trade.sellSignalDate,
-      actualBuyDate: trade.actualBuyDate
-        ? new Date(trade.actualBuyDate)
-        : trade.actualBuyDate,
-      actualSellDate: trade.actualSellDate
-        ? new Date(trade.actualSellDate)
-        : trade.actualSellDate,
-      entryDate: trade.entryDate ? new Date(trade.entryDate) : trade.entryDate,
-    }));
+  if (result.detailedTrades && Array.isArray(result.detailedTrades)) {
+    result.detailedTrades = result.detailedTrades.map(
+      (trade: Record<string, unknown>) => ({
+        ...trade,
+        date: trade.date ? new Date(trade.date as string) : trade.date,
+        buySignalDate: trade.buySignalDate
+          ? new Date(trade.buySignalDate as string)
+          : trade.buySignalDate,
+        sellSignalDate: trade.sellSignalDate
+          ? new Date(trade.sellSignalDate as string)
+          : trade.sellSignalDate,
+        actualBuyDate: trade.actualBuyDate
+          ? new Date(trade.actualBuyDate as string)
+          : trade.actualBuyDate,
+        actualSellDate: trade.actualSellDate
+          ? new Date(trade.actualSellDate as string)
+          : trade.actualSellDate,
+        entryDate: trade.entryDate
+          ? new Date(trade.entryDate as string)
+          : trade.entryDate,
+      }),
+    );
   }
 
   // 🔧 轉換 highLowAnalysis 中的日期（W 策略專用）
-  if (data.highLowAnalysis) {
-    Object.keys(data.highLowAnalysis).forEach((symbol) => {
-      const analysis = data.highLowAnalysis[symbol];
+  if (result.highLowAnalysis) {
+    Object.keys(result.highLowAnalysis as Record<string, unknown>).forEach(
+      (symbol) => {
+        const analysisObj = result.highLowAnalysis as Record<
+          string,
+          Record<string, unknown>
+        >;
+        const analysis = analysisObj[symbol];
 
-      // 轉換 highs 中的日期
-      if (analysis.highs) {
-        analysis.highs = analysis.highs.map((high: any) => ({
-          ...high,
-          date: new Date(high.date),
-          cycleStart: new Date(high.cycleStart),
-          cycleEnd: new Date(high.cycleEnd),
-        }));
-      }
+        // 轉換 highs 中的日期
+        if (analysis.highs && Array.isArray(analysis.highs)) {
+          analysis.highs = analysis.highs.map(
+            (high: Record<string, unknown>) => ({
+              ...high,
+              date: new Date(high.date as string),
+              cycleStart: new Date(high.cycleStart as string),
+              cycleEnd: new Date(high.cycleEnd as string),
+            }),
+          );
+        }
 
-      // 轉換 lows 中的日期
-      if (analysis.lows) {
-        analysis.lows = analysis.lows.map((low: any) => ({
-          ...low,
-          date: new Date(low.date),
-          cycleStart: new Date(low.cycleStart),
-          cycleEnd: new Date(low.cycleEnd),
-        }));
-      }
+        // 轉換 lows 中的日期
+        if (analysis.lows && Array.isArray(analysis.lows)) {
+          analysis.lows = analysis.lows.map((low: Record<string, unknown>) => ({
+            ...low,
+            date: new Date(low.date as string),
+            cycleStart: new Date(low.cycleStart as string),
+            cycleEnd: new Date(low.cycleEnd as string),
+          }));
+        }
 
-      // 轉換 lastAnalysisDate
-      if (analysis.lastAnalysisDate) {
-        analysis.lastAnalysisDate = new Date(analysis.lastAnalysisDate);
-      }
-    });
+        // 轉換 lastAnalysisDate
+        if (analysis.lastAnalysisDate) {
+          analysis.lastAnalysisDate = new Date(
+            analysis.lastAnalysisDate as string,
+          );
+        }
+      },
+    );
   }
 
   // 🔧 轉換 chartData 中的日期（W 策略專用）
-  if (data.chartData) {
-    Object.keys(data.chartData).forEach((symbol) => {
-      const chartData = data.chartData[symbol];
+  if (result.chartData) {
+    Object.keys(result.chartData as Record<string, unknown>).forEach(
+      (symbol) => {
+        const chartDataObj = result.chartData as Record<
+          string,
+          Record<string, unknown>
+        >;
+        const chartData = chartDataObj[symbol];
 
-      // 轉換 stockData 中的日期
-      if (chartData.stockData) {
-        chartData.stockData = chartData.stockData.map((item: any) => ({
-          ...item,
-          date: new Date(item.date),
-        }));
-      }
+        // 轉換 stockData 中的日期
+        if (chartData.stockData && Array.isArray(chartData.stockData)) {
+          chartData.stockData = chartData.stockData.map(
+            (item: Record<string, unknown>) => ({
+              ...item,
+              date: new Date(item.date as string),
+            }),
+          );
+        }
 
-      // 轉換 highLowPoints 中的日期
-      if (chartData.highLowPoints) {
-        chartData.highLowPoints = chartData.highLowPoints.map((point: any) => ({
-          ...point,
-          date: new Date(point.date),
-          cycleStart: new Date(point.cycleStart),
-          cycleEnd: new Date(point.cycleEnd),
-        }));
-      }
+        // 轉換 highLowPoints 中的日期
+        if (chartData.highLowPoints && Array.isArray(chartData.highLowPoints)) {
+          chartData.highLowPoints = chartData.highLowPoints.map(
+            (point: Record<string, unknown>) => ({
+              ...point,
+              date: new Date(point.date as string),
+              cycleStart: new Date(point.cycleStart as string),
+              cycleEnd: new Date(point.cycleEnd as string),
+            }),
+          );
+        }
 
-      // 🔧 新增：轉換 buyPoints 中的日期
-      if (chartData.buyPoints) {
-        chartData.buyPoints = chartData.buyPoints.map((point: any) => ({
-          ...point,
-          date: new Date(point.date),
-        }));
-      }
+        // 🔧 新增：轉換 buyPoints 中的日期
+        if (chartData.buyPoints && Array.isArray(chartData.buyPoints)) {
+          chartData.buyPoints = chartData.buyPoints.map(
+            (point: Record<string, unknown>) => ({
+              ...point,
+              date: new Date(point.date as string),
+            }),
+          );
+        }
 
-      // 🔧 新增：轉換 sellPoints 中的日期
-      if (chartData.sellPoints) {
-        chartData.sellPoints = chartData.sellPoints.map((point: any) => ({
-          ...point,
-          date: new Date(point.date),
-        }));
-      }
-    });
+        // 🔧 新增：轉換 sellPoints 中的日期
+        if (chartData.sellPoints && Array.isArray(chartData.sellPoints)) {
+          chartData.sellPoints = chartData.sellPoints.map(
+            (point: Record<string, unknown>) => ({
+              ...point,
+              date: new Date(point.date as string),
+            }),
+          );
+        }
+      },
+    );
   }
 
-  return data as BacktestResults;
+  return result as unknown as BacktestResults;
 }
 /**
  * 向nest.js獲取所有股票清單

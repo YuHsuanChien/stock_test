@@ -52,7 +52,6 @@ const BacktestSystem = () => {
   const [stocks, setStocks] = useState<string[]>(['2330', '2454', '2317']);
   const [startDate, setStartDate] = useState<string>('2020-01-01');
   const [endDate, setEndDate] = useState<string>('2025-08-05');
-  const [initialCapital, setInitialCapital] = useState<number>(1000000);
   const [loading, setLoading] = useState<boolean>(false);
   const [results, setResults] = useState<BacktestResults | null>(null);
   const [newStock, setNewStock] = useState<string>('');
@@ -101,7 +100,7 @@ const BacktestSystem = () => {
     ma20UpTrend: false, // 預設關閉20線向上條件
     bullishAlignment: false, // 預設關閉多頭排列條件
     stopProfit: 0.15, // 15%
-    maxPositionSize: 0.2, // 20%
+    // 注意：現在固定買1000股，不再需要maxPositionSize
 
     // 新增：回後買上漲策略
     enableBuyUpTrend: true, // 預設啟用
@@ -127,7 +126,7 @@ const BacktestSystem = () => {
       macdSignal: 9,
       volumeThreshold: 1.5, // 提高為Python標準：1.5倍
       volumeLimit: 1000,
-      maxPositionSize: 0.25, // Python: 最大單檔25%
+      // 注意：現在固定買1000股，不再需要maxPositionSize
       stopLoss: 0.06,
       stopProfit: 0.12,
       confidenceThreshold: 0.6, // 平衡Python(70%)與原版(40%)：設定60%
@@ -185,7 +184,6 @@ const BacktestSystem = () => {
         stocks,
         startDate,
         endDate,
-        initialCapital,
         rsiStrategyParams,
         setResults,
         setLoading,
@@ -195,7 +193,6 @@ const BacktestSystem = () => {
         stocks,
         startDate,
         endDate,
-        initialCapital,
         W_StrategyParams,
         setResults,
         setLoading,
@@ -208,23 +205,19 @@ const BacktestSystem = () => {
       await runFullBacktest(
         startDate,
         endDate,
-        initialCapital,
         rsiStrategyParams,
         setStocks,
         setResults,
         setLoading,
-        stocks,
       );
     } else {
       await runFullBacktest(
         startDate,
         endDate,
-        initialCapital,
         W_StrategyParams,
         setStocks,
         setResults,
         setLoading,
-        stocks,
       );
     }
   };
@@ -519,35 +512,6 @@ const BacktestSystem = () => {
               </div>
             </div>
           </div>
-
-          <div className="space-y-4">
-            <h3
-              className={`text-lg font-semibold transition-colors duration-300 ${
-                isDarkMode ? 'text-gray-200' : 'text-gray-700'
-              }`}
-            >
-              資金設定
-            </h3>
-            <div>
-              <label
-                className={`block text-sm font-medium mb-1 transition-colors duration-300 ${
-                  isDarkMode ? 'text-gray-300' : 'text-gray-600'
-                }`}
-              >
-                初始資金 (NT$)
-              </label>
-              <input
-                type="number"
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-300 ${
-                  isDarkMode
-                    ? 'bg-gray-700 border-gray-600 text-white'
-                    : 'bg-white border-gray-300 text-gray-900'
-                }`}
-                value={initialCapital}
-                onChange={(e) => setInitialCapital(Number(e.target.value))}
-              />
-            </div>
-          </div>
         </div>
         <div>
           <h3
@@ -699,7 +663,7 @@ const BacktestSystem = () => {
                     isDarkMode ? 'text-gray-300' : 'text-gray-600'
                   }`}
                 >
-                  最終資金
+                  最終收益
                 </div>
               </div>
               <div

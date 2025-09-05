@@ -8,12 +8,10 @@ import {
 export const runFullBacktest = async (
   startDate: string,
   endDate: string,
-  initialCapital: number,
   strategyParams: RsiStrategyParams | WStrategyParams,
   setStocks: (stocks: string[]) => void,
   setResults: (results: BacktestResults) => void,
   setLoading: (loading: boolean) => void,
-  stocks: string[],
 ) => {
   console.log('🚀🚀🚀 全部回測按鈕被點擊了！開始執行全部股票回測...');
   setLoading(true);
@@ -35,7 +33,6 @@ export const runFullBacktest = async (
       allStockList,
       startDate,
       endDate,
-      initialCapital,
       strategyParams,
     );
 

@@ -1,3 +1,3 @@
 import { create } from 'zustand';
 
-export const useStrategyStore = create((set, get) => ({}));
+export const useStrategyStore = create(() => ({}));

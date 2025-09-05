@@ -41,7 +41,6 @@ export interface RawStockData {
 
 export interface BacktestResults {
   performance: {
-    initialCapital: number;
     finalCapital: number;
     totalReturn: number;
     annualReturn: number;
@@ -105,8 +104,7 @@ export interface WStrategyParams {
 
   // 風控參數
   stopProfit: number; // 停利比例 (預設15%)
-  maxPositionSize: number; // 最大倉位 (預設20%)
-  // 注意：W策略停損機制為跌破買入訊號日開盤價
+  // 注意：W策略停損機制為跌破買入訊號日開盤價，現在固定買1000股
 
   // 新增：回後買上漲策略
   enableBuyUpTrend: boolean; // 啟用回後買上漲策略
@@ -171,7 +169,6 @@ export interface RsiStrategyParams {
   macdSignal: number;
   volumeThreshold: number;
   volumeLimit: number;
-  maxPositionSize: number;
   stopLoss: number;
   stopProfit: number;
   confidenceThreshold: number;

@@ -529,32 +529,6 @@ export default function W_Strategy({
           </div>
         )}
 
-        <div>
-          <label
-            className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
-              isDarkMode ? 'text-gray-300' : 'text-gray-600'
-            }`}
-          >
-            最大倉位(%)
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
-              isDarkMode
-                ? 'bg-gray-700 border-gray-600 text-white'
-                : 'bg-white border-gray-300 text-gray-900'
-            }`}
-            value={strategyParams.maxPositionSize}
-            onChange={(e) =>
-              setStrategyParams({
-                ...strategyParams,
-                maxPositionSize: Number(e.target.value),
-              })
-            }
-          />
-        </div>
-
         {/* 新增：價格區間限制 */}
         <div className="col-span-full">
           <label className="flex items-center space-x-2">

@@ -40,10 +40,11 @@ const StockResultsList: React.FC<StockResultsListProps> = ({
         results.chartData && results.chartData[stock.stock]
       );
 
-      // 計算最終價值 (這裡可以根據實際需要調整計算方式)
-      const finalValue = results.performance.initialCapital + stock.totalProfit;
+      // 計算投資總成本（假設每次買1000股的平均投入成本）
+      const totalInvestment = stock.trades > 0 ? stock.trades * 50000 : 50000; // 假設每次投入約5萬元
+      const finalValue = totalInvestment + stock.totalProfit;
       const returnRate =
-        (stock.totalProfit / results.performance.initialCapital) * 100;
+        stock.trades > 0 ? (stock.totalProfit / totalInvestment) * 100 : 0;
 
       summaries.push({
         symbol: stock.stock,

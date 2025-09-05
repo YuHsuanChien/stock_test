@@ -35,7 +35,6 @@ export const runBacktest = async (
   stocks: string[],
   startDate: string,
   endDate: string,
-  initialCapital: number,
   strategyParams: RsiStrategyParams | WStrategyParams,
   setResults: (r: BacktestResults) => void,
   setLoading: (b: boolean) => void,
@@ -50,7 +49,6 @@ export const runBacktest = async (
       stocks,
       startDate,
       endDate,
-      initialCapital,
       strategyParams,
     );
     setResults(result);
