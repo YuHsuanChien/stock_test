@@ -270,7 +270,7 @@ export default function W_Strategy({
               </div>
               <div>
                 <strong>4. 多頭排列確認：</strong>
-                5日線 &gt; 10日線 &gt; 20日線(可選)
+                5日線 &gt; 20日線 &gt; 60日線(可選)
               </div>
               <div>
                 <strong>5. 交易量確認：</strong>
@@ -363,6 +363,37 @@ export default function W_Strategy({
           </div>
         </div>
 
+        {/* 60線向上確認 */}
+        <div>
+          <label className="flex items-center space-x-2 mb-2">
+            <input
+              type="checkbox"
+              checked={strategyParams.ma60UpTrend}
+              onChange={(e) =>
+                setStrategyParams({
+                  ...strategyParams,
+                  ma60UpTrend: e.target.checked,
+                })
+              }
+              className="form-checkbox h-4 w-4 text-green-600"
+            />
+            <span
+              className={`text-xs font-medium transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-700'
+              }`}
+            >
+              60線向上
+            </span>
+          </label>
+          <div
+            className={`text-xs transition-colors duration-300 ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            }`}
+          >
+            要求MA60連續3天向上且5日斜率&gt;0.01%
+          </div>
+        </div>
+
         {/* 多頭排列確認 */}
         <div>
           <label className="flex items-center space-x-2 mb-2">
@@ -390,7 +421,7 @@ export default function W_Strategy({
               isDarkMode ? 'text-gray-400' : 'text-gray-600'
             }`}
           >
-            要求 5日線 &gt; 10日線 &gt; 20日線
+            要求 5日線 &gt; 20日線 &gt; 60日線
           </div>
         </div>
       </div>
@@ -622,38 +653,6 @@ export default function W_Strategy({
             }`}
           >
             啟用後，只有股價在指定區間內的買點訊號才會被採用
-          </div>
-        </div>
-
-        {/* 新增：即時執行模式 */}
-        <div className="col-span-full">
-          <label className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              className="form-checkbox h-4 w-4 text-orange-600 transition duration-150 ease-in-out"
-              checked={strategyParams.enableInstantExecution}
-              onChange={(e) =>
-                setStrategyParams({
-                  ...strategyParams,
-                  enableInstantExecution: e.target.checked,
-                })
-              }
-            />
-            <span
-              className={`text-xs font-medium transition-colors duration-300 ${
-                isDarkMode ? 'text-gray-300' : 'text-gray-600'
-              }`}
-            >
-              啟用即時執行模式
-            </span>
-          </label>
-
-          <div
-            className={`mt-2 text-xs transition-colors duration-300 ${
-              isDarkMode ? 'text-gray-400' : 'text-gray-600'
-            }`}
-          >
-            啟用後，買賣訊號將在當天收盤價執行，而非隔天開盤價（T+1模式）
           </div>
         </div>
       </div>

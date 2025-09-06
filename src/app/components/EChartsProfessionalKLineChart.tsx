@@ -70,6 +70,7 @@ const EChartsProfessionalKLineChart: React.FC<
       const ma5Data = stockData.map((item) => item.ma5 || null);
       const ma20Data = stockData.map((item) => item.ma20 || null);
       const ma10Data = stockData.map((item) => item.ma10 || null);
+      const ma60Data = stockData.map((item) => item.ma60 || null);
 
       // 計算價格區間，用於設置 Y 軸和標記偏移
       const allPrices = stockData.flatMap((item) => [
@@ -185,7 +186,7 @@ const EChartsProfessionalKLineChart: React.FC<
         backgroundColor: isDarkMode ? '#1f2937' : '#ffffff',
         animation: false,
         legend: {
-          data: ['K線', 'MA5', 'MA20', 'MA10', '成交量'],
+          data: ['K線', 'MA5', 'MA20', 'MA10', 'MA60', '成交量'],
           textStyle: {
             color: isDarkMode ? '#d1d5db' : '#333333',
           },
@@ -230,6 +231,11 @@ const EChartsProfessionalKLineChart: React.FC<
             }
             if (ma10Data[data.dataIndex]) {
               tooltip += `<div>MA10: ${ma10Data[data.dataIndex]?.toFixed(
+                2,
+              )}</div>`;
+            }
+            if (ma60Data[data.dataIndex]) {
+              tooltip += `<div>MA60: ${ma60Data[data.dataIndex]?.toFixed(
                 2,
               )}</div>`;
             }
@@ -417,6 +423,18 @@ const EChartsProfessionalKLineChart: React.FC<
             lineStyle: {
               opacity: 0.8,
               color: '#9c27b0',
+              width: 2,
+            },
+            symbol: 'none',
+          },
+          {
+            name: 'MA60',
+            type: 'line',
+            data: ma60Data,
+            smooth: true,
+            lineStyle: {
+              opacity: 0.8,
+              color: '#4caf50',
               width: 2,
             },
             symbol: 'none',
@@ -625,7 +643,7 @@ const EChartsProfessionalKLineChart: React.FC<
       >
         <strong>💡 ECharts 專業功能：</strong>
         滑鼠滾輪縮放 | 拖拽平移 | 框選縮放 | 工具欄功能 | 📍高低點標記 | 橙線MA5
-        | 藍線MA20 | 紫線MA10 | 成交量柱狀圖 | 專業 Tooltip
+        | 藍線MA20 | 紫線MA10 | 綠線MA60 | 成交量柱狀圖 | 專業 Tooltip
       </div>
     </div>
   );

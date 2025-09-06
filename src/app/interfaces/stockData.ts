@@ -14,6 +14,7 @@ export interface StockData {
   ma20?: number;
   ma5?: number;
   ma10?: number; // 新增MA10中線
+  ma60?: number; // 新增MA60長線
   volumeMA20?: number;
   volumeRatio?: number;
   atr?: number; // 新增ATR指標
@@ -102,6 +103,7 @@ export interface WStrategyParams {
   volumeConfirm: boolean; // 是否需要量能確認
   volumeThreshold: number; // 量能倍數 (預設1.2倍)
   ma20UpTrend: boolean; // 20線向上條件
+  ma60UpTrend: boolean; // 60線向上條件
   bullishAlignment: boolean; // 多頭排列條件 (5日>20日>60日)
 
   // 風控參數
@@ -119,9 +121,6 @@ export interface WStrategyParams {
   enablePriceRangeFilter: boolean; // 啟用價格區間過濾
   minPrice?: number; // 最低價格限制
   maxPrice?: number; // 最高價格限制
-
-  // 新增：即時執行模式
-  enableInstantExecution: boolean; // 啟用即時執行模式（當天收盤價執行，而非T+1開盤價）
 }
 
 // 2. 高低點標記數據結構
