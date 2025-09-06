@@ -113,6 +113,9 @@ const BacktestSystem = () => {
     enablePriceRangeFilter: false, // 預設關閉
     minPrice: undefined, // 未設定
     maxPrice: undefined, // 未設定
+
+    // 新增：即時執行模式
+    enableInstantExecution: false, // 預設關閉，維持T+1模式
   });
 
   const [rsiStrategyParams, setRsiStrategyParams] = useState<RsiStrategyParams>(

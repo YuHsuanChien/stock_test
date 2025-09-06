@@ -71,6 +71,8 @@ export interface BacktestResults {
     trades: number;
     winRate: number;
     totalProfit: number;
+    totalInvestment: number; // 新增：實際投入成本
+    returnRate: number; // 新增：真實報酬率（百分比）
   }[];
   // 新增：高低點分析結果
   highLowAnalysis?: {
@@ -117,6 +119,9 @@ export interface WStrategyParams {
   enablePriceRangeFilter: boolean; // 啟用價格區間過濾
   minPrice?: number; // 最低價格限制
   maxPrice?: number; // 最高價格限制
+
+  // 新增：即時執行模式
+  enableInstantExecution: boolean; // 啟用即時執行模式（當天收盤價執行，而非T+1開盤價）
 }
 
 // 2. 高低點標記數據結構

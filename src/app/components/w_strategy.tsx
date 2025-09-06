@@ -624,6 +624,38 @@ export default function W_Strategy({
             啟用後，只有股價在指定區間內的買點訊號才會被採用
           </div>
         </div>
+
+        {/* 新增：即時執行模式 */}
+        <div className="col-span-full">
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              className="form-checkbox h-4 w-4 text-orange-600 transition duration-150 ease-in-out"
+              checked={strategyParams.enableInstantExecution}
+              onChange={(e) =>
+                setStrategyParams({
+                  ...strategyParams,
+                  enableInstantExecution: e.target.checked,
+                })
+              }
+            />
+            <span
+              className={`text-xs font-medium transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-600'
+              }`}
+            >
+              啟用即時執行模式
+            </span>
+          </label>
+
+          <div
+            className={`mt-2 text-xs transition-colors duration-300 ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            }`}
+          >
+            啟用後，買賣訊號將在當天收盤價執行，而非隔天開盤價（T+1模式）
+          </div>
+        </div>
       </div>
     </div>
   );

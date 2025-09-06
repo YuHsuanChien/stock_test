@@ -73,6 +73,8 @@ interface BacktestResults {
     trades: number;
     winRate: number;
     totalProfit: number;
+    totalInvestment: number; // 新增：實際投入成本
+    returnRate: number; // 新增：真實報酬率（百分比）
   }>;
 }
 

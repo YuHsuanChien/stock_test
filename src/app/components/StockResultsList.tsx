@@ -40,11 +40,10 @@ const StockResultsList: React.FC<StockResultsListProps> = ({
         results.chartData && results.chartData[stock.stock]
       );
 
-      // 計算投資總成本（假設每次買1000股的平均投入成本）
-      const totalInvestment = stock.trades > 0 ? stock.trades * 50000 : 50000; // 假設每次投入約5萬元
+      // 🔧 修正：直接使用後端計算的真實數據，不再假設投資成本
+      const totalInvestment = stock.totalInvestment || 0; // 後端計算的實際投入成本
       const finalValue = totalInvestment + stock.totalProfit;
-      const returnRate =
-        stock.trades > 0 ? (stock.totalProfit / totalInvestment) * 100 : 0;
+      const returnRate = stock.returnRate || 0; // 後端計算的真實報酬率
 
       summaries.push({
         symbol: stock.stock,
