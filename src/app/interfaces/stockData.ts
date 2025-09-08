@@ -102,6 +102,7 @@ export interface WStrategyParams {
   previousHighBreak: boolean; // 必須突破前日高點
   volumeConfirm: boolean; // 是否需要量能確認
   volumeThreshold: number; // 量能倍數 (預設1.2倍)
+  volumeLimit: number; // 🔥 新增：基本成交量門檻 (張數)
   ma20UpTrend: boolean; // 20線向上條件
   ma60UpTrend: boolean; // 60線向上條件
   bullishAlignment: boolean; // 多頭排列條件 (5日>20日>60日)

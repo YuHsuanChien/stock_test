@@ -97,6 +97,7 @@ const BacktestSystem = () => {
     previousHighBreak: false, // 不需要此條件
     volumeConfirm: true, // 預設啟用量能確認
     volumeThreshold: 1.2,
+    volumeLimit: 1000, // 🔥 新增：基本成交量門檻（張數）
     ma20UpTrend: false, // 預設關閉20線向上條件
     ma60UpTrend: false, // 預設關閉60線向上條件
     bullishAlignment: false, // 預設關閉多頭排列條件

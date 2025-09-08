@@ -330,6 +330,43 @@ export default function W_Strategy({
               />
             </div>
           )}
+          {/* 🔥 新增：基本成交量門檻 */}
+          {strategyParams.volumeConfirm && (
+            <div>
+              <label
+                className={`block text-xs font-medium mb-1 mt-1 transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}
+              >
+                基本成交量(張)
+              </label>
+              <input
+                type="number"
+                step="100"
+                min="100"
+                max="10000"
+                className={`w-full px-2 py-1 text-sm border rounded focus:ring-1 focus:ring-green-500 transition-colors duration-300 ${
+                  isDarkMode
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
+                value={strategyParams.volumeLimit}
+                onChange={(e) =>
+                  setStrategyParams({
+                    ...strategyParams,
+                    volumeLimit: Number(e.target.value),
+                  })
+                }
+              />
+              <div
+                className={`text-xs mt-1 transition-colors duration-300 ${
+                  isDarkMode ? 'text-green-400' : 'text-green-600'
+                }`}
+              >
+                最少{strategyParams.volumeLimit.toLocaleString()}張
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 20線向上確認 */}
