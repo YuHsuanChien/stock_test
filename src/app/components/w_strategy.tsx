@@ -544,6 +544,35 @@ export default function W_Strategy({
           </div>
         )}
 
+        {/* 停損參數 - 只在未啟用MA5賣出時顯示 */}
+        {!strategyParams.enableMA5SellSignal && (
+          <div>
+            <label
+              className={`block text-xs font-medium mb-1 transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-600'
+              }`}
+            >
+              停損(%)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors duration-300 ${
+                isDarkMode
+                  ? 'bg-gray-700 border-gray-600 text-white'
+                  : 'bg-white border-gray-300 text-gray-900'
+              }`}
+              value={strategyParams.stopLoss}
+              onChange={(e) =>
+                setStrategyParams({
+                  ...strategyParams,
+                  stopLoss: Number(e.target.value),
+                })
+              }
+            />
+          </div>
+        )}
+
         {/* MA5賣出模式提示 */}
         {strategyParams.enableMA5SellSignal && (
           <div>

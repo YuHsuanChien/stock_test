@@ -102,6 +102,7 @@ const BacktestSystem = () => {
     bullishAlignment: false, // 預設關閉多頭排列條件
     stopProfit: 0.15, // 15%
     // 注意：現在固定買1000股，不再需要maxPositionSize
+    stopLoss: 0.04,
 
     // 新增：回後買上漲策略
     enableBuyUpTrend: true, // 預設啟用

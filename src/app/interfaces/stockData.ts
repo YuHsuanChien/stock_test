@@ -109,6 +109,7 @@ export interface WStrategyParams {
   // 風控參數
   stopProfit: number; // 停利比例 (預設15%)
   // 注意：W策略停損機制為跌破買入訊號日開盤價，現在固定買1000股
+  stopLoss: number; // 停損比例 (預設8%)
 
   // 新增：回後買上漲策略
   enableBuyUpTrend: boolean; // 啟用回後買上漲策略
